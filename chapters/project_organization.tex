@@ -1,0 +1,190 @@
+\section{Project Characteristics and Methodology}
+
+The project described in this thesis was developed by combining elements of exploratory software development with a thoughtful approach to system design aiming to deliver a high-quality software system. While the core goal was to build a functional web application with a modern, distributed architecture, we have spent a significant portion of our efforts on exploring and evaluating existing deep learning models and their integrations to determine their viability for our project.
+
+Unlike typical commercial projects with fixed requirements, the requirements for this system evolved dynamically. Initially, we knew that our goal was to approximate to whatever degree possible commercial solutions, such as Sora \cite{noauthor_sora_nodate} by OpenAI or Veo \cite{noauthor_veo_nodate} by Google DeepMind, given our computational and time constraints, but we did not know what best technologies to choose to pursue this goal. Eventually, the realization of the
+project proceeded roughly in three separate stages.
+
+\begin{itemize}
+    \item \textbf{Exploration Phase:} The initial stage involved evaluating various open-source libraries (such as \texttt{diffusers}) and models (AnimateDiff \cite{guo_animatediff_2024}, FILM \cite{reda_film_2022}, RealESRGAN \cite{wang_real-esrgan_2021}) to find a combination that produced acceptable results within hardware limits. Here we realized the true scope of the computational complexities and high-dimensionality of the problem that we were attempting to solve.
+    \item \textbf{Prototyping Phase:} We designed the video generation pipeline and developed a module capable of executing the pipeline end-to-end. This allowed us to decide on the model composition that we would use to implement the video generation functionality of the application. Given this starting point, we were better able to make decisions regarding how to scale the generation process such that theoretically an arbitrary number of videos could be generated at the same time by the system.
+    \item \textbf{System Integration and Finalization Phase:} The focus shifted to designing a system which enables an end user to generate and view the resulting videos through a friendly graphical user interface. While the previous two phases required us to dive deeply into generative models for images and videos, during this stage we needed to learn how to design a scalable and efficient inference service and integrate it with an intuitive and easy-to-use application frontend. This is the phase which took up the majority of our time and efforts that we have spent on this project since it proved quite complicated to make everything work correctly.
+\end{itemize}
+
+Large-scale generative models that unify natural language with visual and spatiotemporal scene modeling have emerged only recently and now represent one of the leading frontiers of AI research.
+Consequently, we approached this work primarily as a research effort, aiming to get a sense of the current progress in the field and learn how to deploy open weights models using contemporary approaches. After identifying the core technologies we decided to use, we transitioned from an iterative prototyping style of work to incremental/iterative development process. This has eventually led us to completing the video generation system and learning a great deal about real-world techniques for serving generative AI models.
+
+
+\section{Development Timeline}
+The project development spanned approximately 10 months, with distinct phases emerging organically as our understanding of the problem evolved.
+
+\subsection{Prototyping and technology exploration}
+The first four to five months were dedicated to research and exploration. During this period, we evaluated various approaches to model serving and system architecture. Initially, we considered building the system using a microservices architecture with gRPC for inter-service communication. However, after researching deployment strategies and examining the complexity this would introduce, we discovered Ray --- a distributed computing framework that appeared well-suited for ML model serving. This discovery simplified our architecture significantly and became the foundation for our inference layer.
+
+Simultaneously, we explored different text-to-video generation models and pipeline configurations. We experimented with AnimateDiff as the core generation model, evaluated FILM for frame interpolation, and tested RealESRGAN for upscaling. This exploration phase helped us understand the computational requirements, quality trade-offs, and practical constraints of running these models with our available hardware.
+
+\subsection{System integration and deeper dive into deep learning research}
+The following months (five to eighth) marked a transition toward integration and system infrastructure development. Having identified Ray as our deployment framework, we began the practical work of integrating the video generation pipeline with Ray Serve. This involved adapting our pipeline code to work within Ray's distributed execution model, configuring resource allocation for GPU-accelerated inference, and implementing the API endpoints that would expose the generation capabilities to the rest of the system.
+
+During this period, we also conducted a comprehensive literature review of text-to-video generation approaches. This deeper dive into the academic and industry research helped us understand the conceptual foundations of the models we were using, evaluate alternative architectures, and make informed decisions about pipeline composition. We examined various diffusion-based approaches and studied techniques for temporal consistency and frame interpolation. This research phase proved invaluable for understanding the trade-offs inherent in our chosen approach and identifying potential improvements to the generation quality.
+
+Simultaneously, we focused on establishing the supporting infrastructure required for a production-ready system. We configured PostgreSQL as our primary database for storing user accounts, job metadata, and generation parameters. MinIO was set up to provide S3-compatible object storage for the generated videos. A significant effort went into containerizing the entire application using Docker, which proved particularly challenging due to the need for custom images with NVIDIA CUDA dependencies to enable GPU access within the containerized Ray cluster. This containerization strategy ensured consistent testing across different development environments and made it possible to deploy the application in a cluster on a supercomputer or cloud infrastructure.
+
+With the backend infrastructure taking shape, we began developing the user interface to provide an accessible way for users to interact with the video generation system. The frontend development proceeded in parallel with the backend work, with ongoing coordination to ensure the API contracts between the two layers remained consistent. At this stage, frontend used mock API responses to decouple development, allowing both frontend and backend work to proceed independently while each side focused on their respective priorities.
+
+\subsection{Integration, Testing, and Finalization}
+The final months (eighth to ten) brought all the components together and shifted our focus toward integration and feature prioritization. With the project deadline approaching, we needed to make pragmatic decisions about which features were essential for a functional system and which could be deferred or simplified.
+
+Frontend development entered a more advanced stage as we transitioned from working with mock data to integrating with the actual backend APIs. This integration work revealed missing functionality and API contracts that needed to be adjusted. We refined the user interface based on real system behavior, adjusting loading states, error handling, and feedback mechanisms to provide a smooth user experience despite the inherently asynchronous nature of video generation.
+
+On the backend side, we completed the inference endpoints and finalized the integration of the video generation pipeline with Ray Serve. This involved extensive testing to ensure that job submission, execution tracking, and result retrieval worked reliably under various conditions. We implemented the account management functionality, including user registration and profile management, along with authentication and authorization mechanisms to secure access to user resources. The API for retrieving generated videos was developed to support the frontend gallery interface, enabling users to browse and download their creations.
+
+This period was characterized by intensive manual testing, where we validated the complete end-user registration and generation flow from account creation through video generation to result viewing. We identified and resolved numerous issues that only became apparent when all system components operated together, from authorization problems with object storage access to complexities in the job status tracking logic that needed to accurately reflect the multi-stage generation process. By the end of this phase, we had a functioning end-to-end system that met our core requirements and demonstrated the viability of serving open weights generative models through a modern web application architecture.
+
+
+\section{Project Stakeholders}
+
+The project involved several key stakeholders who played distinct roles in the realization and assessment of the system.
+
+\begin{itemize}
+    \item \textbf{The Development Team (Authors):}
+    \begin{itemize}
+        \item \textbf{Michał Proć, Ryszard Żmija, Maciej Grzybacz}: The students responsible for the design, implementation, and documentation of the system. In this project, the team also acted as the primary product owners, defining the system requirements based on the capabilities of the researched deep learning models and available open-source technologies.
+    \end{itemize}
+
+    \item \textbf{Supervisor:}
+    \begin{itemize}
+        \item \textbf{dr hab. inż. Rafał Dreżewski, prof. AGH}: Provided academic guidance, helped organize the workflow, oversaw the progress of the work, and ensured the project met the formal requirements of the thesis.
+    \end{itemize}
+
+    \item \textbf{Diploma Project Class Instructor:}
+    \begin{itemize}
+        \item \textbf{dr inż. Joanna Kosińska}: Supervised the progress of the project during diploma seminar and provided critical feedback.
+    \end{itemize}
+\end{itemize}
+
+
+\section{The Team and Division of Duties}
+
+The project was realized by a team of three students. The division of duties was driven by both individual technical interests and hardware availability.
+
+\begin{itemize}
+    \item \textbf{Michał Proć}: Primarily responsible for the \textbf{Frontend and User Experience}.
+    \begin{itemize}
+        \item Designed the visual identity and user interface of the application, ensuring an intuitive and responsive user experience.
+        \item Implemented the web application frontend.
+        \item Helped with the design of the contract between the application frontend and backend, defining API contracts and data flow between the client and server.
+        \item Developed the client-side logic for job submission, gallery management and real-time status updates.
+        \item Created a user interface available in both Polish and English, together with a user guide explaining the application's key features.
+        \item Integrated the application with social media platforms, enabling users to easily share generated videos externally.
+    \end{itemize}
+
+    \item \textbf{Ryszard Żmija}: Primarily responsible for \textbf{Infrastructure and Distributed Systems}.
+    \begin{itemize}
+        \item Designed the overall system architecture, specifically the separation between the API server and the inference cluster.
+        \item Configured the Ray cluster to manage distributed model inference and resource allocation.
+        \item Set up a containerization strategy using Docker, including custom image with NVIDIA CUDA dependencies to enable GPU access within the containerized Ray cluster.
+        \item Configured the PostgreSQL database and MinIO object storage infrastructure, ensuring reliable persistence for user data and generated videos.
+        \item Integrated the video generation pipeline with Ray Serve, connecting it to the business logic layer and exposing it through RESTful API endpoints.
+        \item Implemented the account management system, including user registration and profile management.
+        \item Developed the authentication and authorization mechanisms, ensuring secure access to the application's resources and API endpoints.
+        \item Led the effort to explore different approaches to text-to-video generation and conduct a thorough review of the existing literature.
+    \end{itemize}
+
+    \item \textbf{Maciej Grzybacz}: Primarily responsible for \textbf{Pipeline Design and Model Integration}.
+    \begin{itemize}
+        \item Designed and implemented the video generation pipeline, evaluating different combinations of components to optimize inference time and output quality.
+        \item Fine-tuned generation parameters to balance quality and performance.
+        \item Helped integrate the pipeline into the backend infrastructure and participated in the development of business logic.
+        \item Acted as the primary tester of the video generation pipeline, as he was the only team member with a GPU possessing sufficient VRAM to locally test its full capabilities.
+    \end{itemize}
+\end{itemize}
+
+
+\section{Work Organization and Tools}
+
+We strived to develop an effective system for communication and collaboration that allows everyone
+on the team to understand our ongoing work and contribute to its implementation.
+
+\subsection{Communication}
+We used Discord as the primary communication platform and created a dedicated server to organize our efforts.
+While many auxiliary channels were created during development, the list below highlights only the most important ones that played a central role in collaboration.
+\begin{itemize}
+    \item \texttt{\#model}: For discussing the design and implementation of the video generation pipeline, exploring open weights models, and evaluating deployment strategies.
+    \item \texttt{\#backend}: For coordinating API development, business logic implementation, and the integration of the Ray cluster with the rest of the application.
+    \item \texttt{\#frontend}: For discussing UI design decisions, evaluating different layout approaches, and coordinating the integration between the client application and the backend services.
+    \item \texttt{\#important}: For critical project information, such as deadlines, milestone updates, major architectural decisions and summaries of key agreements reached during meetings.
+    \item \texttt{\#sources}: For providing links to relevant and interesting resources that we could use to better understand industry practices in deploying and serving machine learning models.
+\end{itemize}
+
+We also met in Discord voice channels to discuss the direction of the project and plan our next steps.
+Their frequency varied depending on the stage of the project: during the exploration and prototyping phase, meetings occurred sporadically as needed, often triggered by new research findings or experimental results. In the integration and finalization stages, voice meetings became more regular to synchronize implementation efforts.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/sharing_internet_research_findings.png}
+    \caption[Sharing deep learning research findings on Discord]{Discord was a great place for sharing information about deep learning research and existing open weights models.}
+    \label{fig:discord-models}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/model_serving_findings.png}
+    \caption[Sharing model deployment best practices]{As none of us had experience in deploying machine learning models, it was crucial to keep everyone informed about industry best practices.}
+    \label{fig:deployment-strategies}
+\end{figure}
+
+\subsection{Task Management}
+Initially, we attempted to use GitHub Projects (Kanban boards). However, we found that the overhead of maintaining the board did not improve workflow efficiency. The process shifted to a more organic approach where tasks were assigned during voice chat meetings based on immediate project needs and individual availability.
+
+\subsection{AI Tool Usage}
+
+In the preparation of this bachelor's thesis, AI-powered language tools were utilized to enhance the clarity, coherence and overall quality of the written text.
+Additionally, AI tools were used as a support during the initial research phase by assisting in the understanding of scientific literature and exploration of the problem domain.
+Information obtained in this manner was verified against original sources and referenced research papers.
+However, the content, ideas and conclusions presented herein are solely the author's own.
+Any errors or omissions remain the responsibility of the author.
+
+
+\section{Techniques and Practices Applied}
+
+We applied several software engineering practices to ensure code quality and ease of collaboration.
+
+\subsection{Development Workflow and Version Control}
+The source code was managed using Git and hosted on GitHub, which served as the central point of truth for the project.
+We adopted the GitHub Flow strategy, a streamlined branching model well-suited for our team size and deployment requirements.
+
+In this approach, the \texttt{main} branch contains deployable code at all times, while new features and fixes are developed on separate feature branches.
+Each feature branch is created from \texttt{main}, developed independently, and then integrated back through Pull Requests (PRs).
+
+Pull Requests served multiple purposes in the workflow:
+\begin{itemize}
+    \item \textbf{Code review:} Team members reviewed each other's code before merging, attempting to catch potential issues early and ensure code quality.
+    \item \textbf{Documentation:} PRs provided a record of what changed, why it changed, and how it was implemented.
+    \item \textbf{Discussion:} PRs facilitated technical discussions about implementation approaches and design decisions.
+\end{itemize}
+
+This workflow enabled us to perform parallel development across different system components while at the same time facilitating code review and knowledge sharing, ensuring that all team members remained informed about changes to the codebase.
+
+\subsection{Testing and Validation}
+Given the distributed and non-deterministic nature of generative AI systems, traditional automated testing approaches proved challenging to implement within our time constraints. Instead, we adopted a pragmatic validation strategy that balanced thoroughness with development velocity.
+
+We primarily relied on manual validation to verify implementations on feature branches before merging them into the main branch. Each of us tested their changes locally, ensuring that new functionality worked as expected in our development environment. During code reviews, we would pull feature branches of each other to validate functionality and catch issues that might not be apparent from reading the code alone.
+
+To support parallel development between the frontend and backend, we relied on supporting tools such as Mockoon, Postman, and Swagger UI.
+Mockoon allowed the frontend to be developed independently during the early stages by providing realistic mock API responses, eliminating blockers caused by incomplete backend functionality.
+In turn, Postman and Swagger facilitated backend testing, API inspection, and rapid iteration on endpoint definitions.
+This toolset ensured that both parts of the system could progress simultaneously without introducing integration delays.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/swagger.png}
+    \caption{Screenshot of the API documentation view in Swagger UI.}
+    \label{fig:swagger}
+\end{figure}
+\FloatBarrier
+
+For more complex features involving the integration of multiple system components, we used end-to-end testing scenarios that simulated realistic user workflows. This included testing the complete video generation pipeline from prompt submission through job execution to final video retrieval, helping us identify integration issues and performance bottlenecks that only manifested when the entire system operated together.
+
+While we recognized the value of automated integration tests, the complexity of testing a system that involves GPU-accelerated model inference, distributed job scheduling, and non-deterministic generative outputs made this impractical given our timeline. We focused instead on delivering a functional system and ensuring that critical user flows were thoroughly validated through manual testing.

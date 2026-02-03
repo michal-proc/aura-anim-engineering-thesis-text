@@ -1,0 +1,785 @@
+\section{Introduction}
+
+The rise of artificial intelligence and deep learning has opened up a new era
+of rapid technological innovation and transformative research in computer science. Over the past 15 years,
+a paradigm shift toward deep learning has driven an explosion of breakthroughs, building on
+decades of theoretical work. As researchers strive to develop systems with human-like reasoning
+and adaptability, they continue to push the boundaries of what is computationally possible---motivated
+both by practical applications and a deeper curiosity about the nature of intelligence itself.
+Fundamental advances, such as the introduction of new neural network architectures and effective training methods,
+have enabled AI systems to tackle previously intractable tasks across language understanding, visual perception, and complex decision-making.
+Yet, several fundamental challenges remain unsolved. For example, current AI systems struggle with systematic compositional generalization---
+they don't reliably compose known concepts in novel ways like humans do. A model might excel at individual tasks
+but fail when asked to combine them in ways not seen during training. This suggests that we are missing
+something fundamental about how abstract reasoning works.
+
+Even though for most people outside the field of computer science it may seem like artificial intelligence is a very recent
+invention, the ideas of constructing machines which exhibit intelligence date back to the 1940s and 1950s. In 1950 Alan Turing
+posed the foundational question in his paper "Computing Machinery and Intelligence" \cite{turing_computing_1950} - "Can machines think?" 
+and tried to reason about its viability and implications. The core takeaway was that intelligence is a matter of observable
+behavior, not a mysterious inner essence, and there is no fundamental reason machines can't exhibit it. It argued that
+constructing intelligent machines is a legitimate scientific and engineering pursuit, not science fiction or philosophical impossibility.
+Turing devised a test in which a human interrogator has text-based conversations with two hidden participants - one human, one machine.
+If the interrogator cannot reliably determine which is which after questioning both, the machine is said to have passed the test.
+The Turing Test remains historically significant not as a practical evaluation method, but for establishing that intelligence should
+be assessed through observable behavior rather than metaphysical criteria. This behavioral perspective---that what matters is what a system does,
+not what it's "made of"---continues to underpin how we evaluate AI systems today, even though the specific test Turing proposed has been superseded
+by more targeted benchmarks.
+
+Modern AI is dominated by an approach called deep learning which uses computational models called neural networks.
+Neural networks are computational systems organized in layers that learn to recognize patterns by adjusting connection strengths
+between artificial neurons. The concept of neural networks can be traced back to the work of Warren McCulloch and Walter Pitts (1943).
+They combined basic insights into how brain neurons work with Russell and Whitehead's formal propositional logic and Turing's theory of computation
+to propose the first model of artificial neurons. They managed to show that networks of connected neurons could perform logical operations
+and simulate finite automata, laying groundwork for later proofs of computational universality.
+Later advances established methods for modifying the strengths of connections between neurons to train the neural networks to compute desired functions within some margin of error.
+For roughly sixty years, neural networks were not the dominant approach to building intelligent systems as they are today. They were perceived to have significant limitations,
+some theoretical and some stemming from the inability of researchers to experiment with large neural networks trained on large datasets.
+By the late 2000s computing technology such as the CUDA platform introduced by NVIDIA enabled general purpose programming of GPUs
+which by this point had become massively-parallel processors. Over the next couple of years research groups, most prominently Geoffrey Hinton's
+group at the University of Toronto, managed to implement algorithms for training neural networks on this new hardware. This culminated in the
+development of a deep convolutional neural network dubbed AlexNet in 2012 \cite{krizhevsky_imagenet_2012}, which achieved dramatic improvement over state-of-the-art
+algorithms for image classification and initiated a flurry of research that has only accelerated since then.
+
+A crucial aspect powering much of the progress in AI in recent years is the explosion of computing power available and neural network
+architectures that can effectively harness this compute.
+While fully-connected networks, where every neuron in one layer is connected to every neuron in the next layer,
+can theoretically approximate any continuous function on a compact set, they're impractical for most real-world problems because they lack inductive biases that match
+the structure of the data. For example, a fully-connected network processing images treats each pixel independently, requiring enormous
+amounts of data to learn basic facts like "nearby pixels are related" or "a cat looks the same whether it's on the left or right side of the image".
+Specialized architectures encode these assumptions directly: convolutional networks build in spatial locality and translation invariance for images,
+recurrent networks handle sequential dependencies for time-series data, and transformers capture long-range relationships through attention mechanisms.
+These architectural choices dramatically reduce the hypothesis space the network must search, making learning tractable with realistic amounts of data and computation.
+
+In this thesis we focus on generative AI. Generative AI models are designed to create new content - text, images, video, or other data -
+rather than simply classifying or analyzing existing inputs. While discriminative models learn to map inputs to outputs, distinguishing between categories
+or making predictions, generative models learn to capture the statistical structure of the data itself, enabling them to synthesize novel samples.
+Modern generative systems are trained on massive datasets to capture statistical patterns at multiple levels allowing
+them to generate coherent text, images, videos or other complex outputs. To contextualize the text-to-video generation task that is the focus of this thesis,
+we first briefly survey the foundational architectural approaches that have shaped the field of generative AI.
+
+The introduction of Generative Adversarial Networks (GANs) \cite{goodfellow_generative_2014} marked a pivotal moment in the field.
+GANs comprise two neural networks---a generator and a discriminator---that compete against each other, enabling the generation of highly
+realistic images and data distributions previously considered extremely challenging to model. Around the same time,
+Variational Autoencoders (VAEs) \cite{kingma_auto-encoding_2014} provided a complementary probabilistic framework,
+enabling researchers to generate new data points by sampling from learned latent spaces and allowing for more structured and
+interpretable representations.
+
+Building on these foundations, Diffusion Probabilistic Models \cite{sohl-dickstein_deep_2015} \cite{ho_denoising_2020} have more
+recently emerged as a powerful alternative, demonstrating exceptional capabilities particularly in image generation tasks.
+Diffusion models operate by gradually transforming random noise into coherent data through iterative refinement,
+achieving state-of-the-art fidelity and diversity in generated outputs. Their robust performance has rapidly positioned diffusion
+models at the forefront of generative research, owing to their stability during training and superior sample quality compared to earlier
+architectures.
+
+Complementing these core generative architectures, the advent of attention mechanisms \cite{bahdanau_neural_2014} and the
+Transformer model \cite{vaswani_attention_2017} has significantly enhanced generative capabilities, particularly for
+sequential data such as language. By efficiently capturing long-range dependencies, Transformers have enabled generative models
+to produce coherent and contextually relevant sequences of text---a development exemplified by
+Transformer-based large language models such as the GPT family, culminating in GPT-3.5 in 2022.
+
+Collectively, these innovations---GANs, VAEs, Diffusion models, and Transformer architectures---have expanded the possibilities of
+generative AI across diverse data types and modalities. Beyond high-fidelity image and text generation, researchers have applied
+these models to tasks such as music composition \cite{dhariwal_jukebox_2020}, 3D object synthesis \cite{poole_dreamfusion_2022},
+speech generation \cite{oord_wavenet_2016}, and cross-modal translation \cite{radford_learning_2021}.
+This trajectory has set the stage for exploration of even more complex generative tasks, including text-to-image and text-to-video generation.
+These multimodal tasks require the integration of multiple data modalities and demand both technical sophistication
+and computational scalability---topics addressed in depth in the following sections.
+
+Multimodal generative models are designed to understand and generate content involving multiple types of data, such as text, images, audio, and video.
+These models typically learn joint representations that capture the complex relationships between different data types---for instance, associating
+textual descriptions with corresponding visual scenes or generating spoken language from written text. This capability to bridge distinct
+modalities enables a richer understanding of context and semantics than is possible with unimodal systems, and represents a step
+towards more comprehensive artificial intelligence.
+
+Among the most ambitious areas within multimodal generative AI is text-to-video generation: the synthesis of video sequences from textual descriptions.
+This task requires not only the generation of visually coherent and realistic frames but also the creation of temporally consistent motion
+and narrative progression that accurately reflects the input text. Text-to-video generation extends the challenges of text-to-image generation
+by adding the dimension of time, demanding models that can understand and depict actions, interactions, and transformations over sequences of frames.
+The complexity of this task stems from the need to model intricate spatio-temporal dynamics, maintain long-range coherence, and align generated
+visual content precisely with nuanced textual prompts. While practical applications are still emerging as the technology matures, text-to-video
+generation holds promise for rapid prototyping in creative industries, synthetic data generation for training other AI systems, and lowering
+barriers to video content creation. The following section provides a foundational overview of text-to-video generation, outlining its main
+challenges and architectural approaches.
+
+The goal of this thesis is to explore the current capabilities of text-to-video generation technology and to build a functional video generation
+system using open-weights models and open-source infrastructure. While state-of-the-art commercial systems such as OpenAI's Sora and Google's Veo
+demonstrate impressive results, they remain closed and inaccessible to independent researchers and developers. In contrast, a growing ecosystem
+of open-weights models provides an opportunity to study and combine these components into working systems. Our work takes advantage of this
+opportunity by constructing a video generation system from openly available models, with a particular focus on making the system runnable on
+consumer-grade hardware rather than requiring data-center resources. Beyond the core generation functionality, we develop a web application with
+a user-friendly interface that allows users without specialized technical knowledge to generate videos and observe the capabilities of contemporary
+open-weights models firsthand. Subsequent chapters detail the specific components chosen for this system, the overall architecture, the implementation
+process, and the evaluation of the developed application.
+
+\section{The text-to-video generation task}
+
+\subsection{Defining text-to-video generation}
+
+As introduced in the preceding overview of generative AI, text-to-video generation stands as a particularly ambitious frontier,
+extending the capabilities of text-to-image synthesis into the temporal domain. This section provides a foundational understanding
+of the text-to-video generation task, detailing its core definition, operational parameters, primary objectives, and inherent
+complexities that researchers and developers strive to overcome.
+
+Text-to-video generation can be formally defined as the automated process of synthesizing a sequence of visual frames
+from a given natural language textual description. The fundamental aim is to produce a video that is not only semantically
+aligned with the input prompt but also visually coherent, realistic, and exhibits plausible temporal dynamics. The input to such a
+system is typically a textual prompt, which can range from a concise descriptive phrase or a single sentence (e.g., "a corgi playing
+fetch in a park on a sunny day") to more elaborate narratives or even script-like instructions, potentially specifying characters,
+actions, settings, and desired artistic styles. The output is a video sequence---a series of frames displayed in succession to
+create the illusion of motion---that ideally embodies the textual description in its entirety.
+
+The successful generation of video from text hinges on achieving several related core objectives. Firstly, \textbf{semantic alignment}
+is paramount; the generated visual content must accurately interpret and reflect the meaning, objects, actions, and context conveyed
+in the input text. Secondly, the output must possess high \textbf{visual quality}, meaning frames should be clear, detailed, and free from
+distracting artifacts, approaching the fidelity of real-world footage or the desired artistic style. Finally, and critically
+differentiating this task from static image generation, is the need for \textbf{temporal coherence}. This implies that the video must
+present logical and smooth progression over time, with consistent appearance of objects and characters, natural-seeming motion, and
+believable transitions between states or scenes. High-quality text-to-video generation systems strive to meet these objectives, as illustrated
+by the example from Imagen Video \cite{ho_imagen_2022} in Figure~\ref{fig:imagen-leaves-lake}. Addressing these aspects simultaneously constitutes
+the central challenge of the text-to-video generation task.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/imagen-video-autumn-leaves.png}
+    \caption[Text-to-video generation example by Imagen Video]{An example of text-to-video generation by Imagen Video, depicting leaves falling onto a lake. This sequence demonstrates
+    strong semantic alignment with the prompt "A bunch of autumn leaves falling on a calm lake to form the text Imagen Video. Smooth.". It also shows
+    high visual quality in the rendering of the leaves and water, and crucial temporal coherence in the motion of the falling leaves
+    along with the subtle ripples on the water surface. (Keyframes from Ho et al. \cite{ho_imagen_2022}. Further examples and project details available at \url{https://imagen.research.google/video/})}
+    \label{fig:imagen-leaves-lake}
+\end{figure}
+\FloatBarrier
+
+\subsection{Key challenges}
+
+Generating high-quality video from textual descriptions involves particular technical challenges, distinct from those in other
+generative tasks such as text-to-image generation. These challenges stem from the essential requirements of correctly understanding
+detailed language, managing high-dimensional data inherent in videos, and crucially, modeling the complex nature of motion together with
+the development of a scene over time.
+
+An essential part of text-to-video generation is an effective \textbf{semantic interpretation} of the provided prompts. Text descriptions can often be
+unclear or have multiple meanings, and they may require a good understanding of the context, especially when they involve many
+objects with specific features, complex actions, interactions, or abstract ideas like mood or artistic style. Effective models need
+to do more than just understand the sentence structure; they must connect the meaning of the text to believable visuals that change
+smoothly over time. If the model misunderstands small details in the prompt or fails to show the intended relationships, the resulting
+videos can be very different from what the user wanted. This could lead to, for instance, incorrect interactions between objects and completely
+nonsensical scenes.
+
+The inherent nature of video as a data format contributes significantly to the complexity of the task. Video sequences are high-dimensional,
+typically comprising hundreds or even thousands of individual frames, each often a high-resolution image. Generating this extensive
+spatio-temporal data requires models with substantial expressive capacity and places a considerable computational load on both the training
+phase and subsequent inference stages. Consequently, the likelihood of introducing visual artifacts or inconsistencies in such complex data space is
+significantly higher than in the generation of static, individual images.
+
+Perhaps one of the most defining and persistent challenges in text-to-video generation is achieving robust
+\textbf{temporal consistency} (also referred to as temporal coherence). While individual frames within a generated
+sequence might be plausible when viewed in isolation, ensuring that objects and characters maintain their identity,
+appearance, and attributes consistently across frames is a sophisticated problem. The objective is to prevent disruptive
+visual artifacts such as flickering, illogical transformations or morphing of objects, sudden disappearances, or unnatural, jerky motion.
+This requires the models to learn and effectively utilize long-range dependencies between frames, thereby establishing a smooth and
+believable frame-to-frame continuity. This aspect of maintaining coherence across time becomes progressively more difficult as the
+target duration of the generated video increases.
+
+Beyond achieving smooth continuity, a significant challenge lies in modeling \textbf{complex dynamics and motion with realism}. This involves
+more than just depicting simple object translations or rotations; it extends to generating believable interactions between multiple
+agents or characters ensuring that movements approximately respect the laws of physics. Furthermore, this includes the complex
+task of rendering the motion of non-rigid elements, such as the flowing of water. Capturing the subtleties of human gestures, facial
+expressions that convey emotion, or the coordinated but also individual motions of people in a crowd, also requires models to develop
+a robust internal understanding of how motion and behavior happen in the real world.
+
+Finally, the advancement and overall capabilities of text-to-video models are closely tied to the \textbf{availability and quality of
+training data}. While large-scale datasets combining images and text have significantly propelled image generation, assembling text-to-video
+datasets of similar scope, diversity, and with accurate \textbf{annotations} is a more demanding task. Such datasets are crucial for
+teaching models the wide array of visual concepts, actions, temporal relationships between events, and stylistic variations they need
+to learn. It is important to note that major industry laboratories, such as OpenAI with its Sora model \cite{noauthor_sora_nodate} and Google
+with its Veo model \cite{noauthor_veo_nodate} (representing the state of the art as of early 2025), often leverage extensive resources and
+advanced data processing techniques (e.g., automated re-captioning of large unlabeled video corpuses) to amass vast, unique datasets.
+This can address certain aspects of data quantity and diversity for their specific models, though fundamental challenges related to
+data quality and inherent biases may still persist even at that scale. However, for the broader research community and in many specific
+domains, the difficulties in accessing and curating suitable public data remain considerable \cite{wang_swap_2024}. Consequently, factors such as the scarcity
+of data for specific types of content or domains, the potential for dataset bias to be learned and amplified by the models, and the substantial
+cost and effort involved in data annotation can significantly slow down overall advancement, limiting the fairness, robustness, and generalization
+capabilities of developed text-to-video systems.
+
+\subsection{Architectural approaches to text-to-video generation}
+
+The transformation of textual descriptions into dynamic video sequences presents a complex challenge that has spurred the development of diverse
+and sophisticated model architectures. These architectures are required not only to interpret natural language and synthesize high-fidelity visual
+frames but also to accurately model the temporal dimension, ensuring that motion, object identity, and generated scenes evolve coherently over time.
+Broadly, approaches to text-to-video generation fall into two main categories: \textbf{end-to-end models}, which are specifically designed and trained for direct
+text-to-video synthesis, and \textbf{pipeline-based systems}, which adapt and extend powerful pre-trained text-to-image models by incorporating additional mechanisms
+for temporal modeling. Both strategies ultimately seek to translate textual prompts into complete, coherent video sequences by addressing the distinct yet
+interconnected tasks of language understanding, visual synthesis, and temporal dynamics.
+
+\subsubsection{End-to-end text-to-video architectures}
+
+End-to-end text-to-video models are explicitly designed and trained to manage the complete video generation task directly from textual input.
+These architectures typically integrate three primary building blocks: a language interpreter, a vision processor, and a temporal handler. Each
+of these components is essential for translating text into a coherent video sequence, and their development has progressed rapidly in recent years \cite{cho_sora_2024} \cite{liu_sora_2024}.
+
+\paragraph{1. Language interpreter}
+
+The process of converting text to video starts with the \textit{language interpreter}. This component is responsible for taking the
+input text prompt and converting it into a numerical representation, often an \textit{embedding}, that the vision model can
+effectively utilize. The ability of these models to transform sequences of words into visual objects and to connect the textual
+content with the dynamics present in video is foundational. The evolution of language interpreters is depicted in Figure 2 of Cho et al. (2024) \cite{cho_sora_2024}
+and includes:
+\begin{itemize}
+    \item \textbf{Recurrent neural networks (RNNs)}:
+    \begin{itemize}
+        \item \textbf{How it works}: RNNs were frequently used as text prompt encoders in early text-to-video models, particularly those employing GAN architectures. In these
+        systems, the input text prompt would first be transformed into text embeddings using various vectorization techniques (such as GloVe \cite{pennington_glove_2014}, Skip-thought
+        vectors \cite{kiros_skip-thought_2015}, or outputs from a CNN/MLP). These embeddings were then processed sequentially by the recurrent network (which could be a simple RNN, LSTM, or GRU)
+        to derive a contextual understanding of the text. This was particularly relevant for models attempting to generate sequential scenes based on an overarching topic sentence.
+        \item \textbf{Benefits}: RNNs are inherently suited for processing sequential data like text, making them a natural choice for encoding prompts in early text-to-video systems.
+        They provided an established method for capturing local context and temporal dependencies within the input sentences.
+        \item \textbf{Challenges}: Standard RNNs can face difficulties in capturing very long-range dependencies within complex textual narratives, although LSTMs and GRUs were designed
+        to mitigate this issue to some extent. Compared to more modern transformer-based architectures, RNNs may be less effective at understanding intricate semantic nuances and
+        long-distance contextual relationships present in detailed prompts.
+        \item \textbf{Examples}: Early text-to-video models often paired GAN-based vision processors with RNN language interpreters. Examples include TGANS-C \cite{pan_create_2018}, T2V \cite{li_video_2017}, StoryGAN \cite{li_storygan_2019}, and TivGan \cite{kim_tivgan_2021}.
+    \end{itemize}
+    \item \textbf{Transformer-based models}:
+    \begin{itemize}
+        \item \textbf{How it works}: More contemporary text-to-video architectures, including those based on autoregressive models, vector-quantized approaches, and some diffusion models, have
+        adopted Transformer models to convert text prompts into language tokens or embeddings. BERT (an encoder-only transformer known for its bidirectional attention mechanism) \cite{devlin_bert_2019} and T5
+        (an encoder-decoder transformer designed for text-to-text transfer tasks) \cite{raffel_exploring_2023} are two common language encoders integrated into these generation models. Both architectures fundamentally
+        encode text by learning representations through objectives like denoising or masked token prediction.
+        \item \textbf{Benefits}: Transformers excel at capturing long-range dependencies and complex contextual relationships within text due to their self-attention mechanisms. They are highly
+        effective at performing sequence recognition from text descriptions and correlating these with fine-grained details in the generated video. T5-family models, in particular, are favored
+        in many powerful text-to-video systems due to their scalability; increasing the parameter count of T5 has been shown to substantially boost performance.
+        \item \textbf{Challenges}: While Transformer encoders like BERT and T5 are excellent for detailed textual understanding, they might be limited in their innate ability for global understanding
+        of the multimodal context required for video (i.e., the direct mapping of text to overall visual scene semantics) when compared to models explicitly pre-trained for vision-language alignment, such as CLIP.
+        \item \textbf{Examples}: Several text-to-video models have incorporated general Transformer-based language interpreters. For instance, Phenaki \cite{villegas_phenaki_2022} utilizes T5-family models. Other examples that employ
+        Transformer encoders (distinct from or in addition to contrastive pre-training like CLIP) include GODIVA \cite{wu_godiva_2021}, CoGVideo \cite{hong_cogvideo_2022}, and VideoPoet \cite{kondratyuk_videopoet_2024}.
+    \end{itemize}
+    \item \textbf{Contrastive models}:
+    \begin{itemize}
+        \item \textbf{How it works}: A large proportion of recent text-to-video generation models leverage text encoders from vision-language pre-trained (VLP) models like CLIP \cite{radford_learning_2021}. CLIP was originally trained on vast
+        datasets of image-caption pairs using a contrastive learning objective, which teaches the model to align representations of images and their corresponding textual descriptions in a shared embedding space.
+        The CLIP text encoder, itself a Transformer, is therefore adept at producing text embeddings that are highly correlated with visual semantics, particularly for matching a text description to an image as a whole. This alignment also enables
+        CLIP to perform zero-shot classification on arbitrary categories, though its primary value for generative models lies in the quality of its learned vision-language embedding space.
+        \item \textbf{Benefits}: The primary advantage of using CLIP-like text encoders is their proficiency in achieving strong text-to-visual alignment due to their contrastive pre-training objective, which allows
+        for efficient matching of text and image (and by extension, video frame) content. This often leads to a better global understanding of how the text prompt as a whole should map to the visual scene in the
+        generated video. Their widespread adoption in various visual generation tasks underscores their effectiveness in bridging the gap between textual descriptions and visual outputs.
+        \item \textbf{Challenges}: While CLIP text encoders are excellent for capturing the overall semantic correspondence between text and visuals (general representation), there might be a trade-off concerning the level of highly detailed,
+        fine-grained compositional understanding or nuanced relational reasoning compared to what very large, general-purpose language models might offer, unless they are specifically fine-tuned for such detailed generation tasks or augmented with other mechanisms.
+        \item \textbf{Examples}: The majority of recent diffusion-based text-to-video models utilize contrastive model text encoders, prominently CLIP. Examples include Make-A-Video \cite{singer_make--video_2022}, Follow Your Pose \cite{ma_follow_2024}, Tune-A-Video \cite{wu_tune--video_2023},
+        AnimateDiff \cite{guo_animatediff_2024}, Video LDM \cite{blattmann_align_2023}, and Stable Video Diffusion \cite{blattmann_stable_2023}.
+    \end{itemize}
+\end{itemize}
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/CLIP-diagram.png}
+    \caption[CLIP contrastive learning approach]{Diagram illustrating the contrastive learning approach in CLIP. The model processes N images and N text descriptions through dedicated encoders to produce visual ($V_i$)
+    and textual ($T_i$) embeddings. A similarity matrix is then constructed, and the training objective is to maximize the similarity scores for correct image-text pairs (shaded diagonal entries)
+    while minimizing them for incorrect pairs, thereby learning a shared representation space.\\Image from Song et al. (2022) \cite{song_clip_2022}. Licensed under CC BY-NC-ND 4.0 International.}
+    \label{fig:clip-diagram}
+\end{figure}
+\FloatBarrier
+
+\paragraph{2. Vision processor}
+
+The vision processor is the core generative engine within text-to-video architectures. Its primary function is to synthesize the individual visual frames of the video, conditioned on the textual
+embeddings provided by the language interpreter. The choice and design of the vision processor have seen significant evolution, with various architectural families being explored. The evolution of
+these processors is depicted in Figure 3 of Cho et al. (2024) \cite{cho_sora_2024}:
+
+\begin{itemize}
+    \item \textbf{VQ-VAE (Vector Quantized-Variational Autoencoder)}:
+    \begin{itemize}
+        \item \textbf{How it works}: VQ-VAE models \cite{oord_neural_2018} operate by first encoding the input video into a set of discrete latent variables. This is achieved by compressing the video into a discrete latent
+        space using a learned codebook through a process of vector quantization, which involves a nearest neighbor look-up in an embedding space. The generation then happens in this quantized latent
+        space, based on the principles of variational inference similar to standard VAEs, which aim to reconstruct new data by sampling from an approximation of the posterior distribution of these latent variables.
+        \item \textbf{Benefits}: Performing generation in a compressed latent space makes the training process less computationally costly compared to direct pixel-space generation. The discretization of the latent
+        space also makes VQ-VAE adaptable to other data modalities like language and speech, and suitable for tasks involving reasoning and prediction. This approach has proven effective for the joint learning of text
+        and video data.
+        \item \textbf{Challenges}: While efficient, ensuring high-fidelity visual output that matches the quality of leading diffusion models can be a challenge. Moreover, the discrete nature, while beneficial for some
+        aspects, may require sophisticated temporal handling to ensure smooth transitions if not inherently part of the autoregressive generation over discrete tokens.
+        \item \textbf{Examples}: GODIVA \cite{wu_godiva_2021} was a pioneering text-to-video model developed using VQ-VAE. Other models that have utilized VQ-VAE as their vision processor include CogVideo \cite{hong_cogvideo_2022}, StoryDALL-E \cite{maharana_storydall-e_2022}, and Text2Performer \cite{jiang_text2performer_2023}.
+    \end{itemize}
+    \item \textbf{Generative Adversarial Networks (GANs)}:
+    \begin{itemize}
+    \item \textbf{How it works}: GANs \cite{goodfellow_generative_2014} consist of two neural networks, a generator and a discriminator, which are trained in a competitive process. The generator creates video frames, while the discriminator attempts to distinguish these
+    generated frames from real video frames. The generator's objective is to produce frames that are realistic enough to deceive the discriminator, effectively maximizing the likelihood of the discriminator making an error.
+    \item \textbf{Benefits}: GANs are primarily employed in text-to-video generation to produce video frames that exhibit both high visual quality and significant diversity. The adversarial training process, often without explicit
+    regularization penalties on the generator's output complexity, encourages the model to focus on fine-grained details, leading to visually sharp outputs. This makes them particularly useful for tasks like story visualization,
+    where diverse scene generation is key.
+    \item \textbf{Challenges}: Vanilla GANs often struggle with generating high-resolution video frames efficiently. This is due to the high computational cost of operating directly in pixel space for large frames and the potential limitations
+    of standard CNN backbones in capturing complex relational compositions among visual elements. Training stability can also be a concern. More recent diffusion models have generally surpassed GANs in achieving a better balance between
+    output diversity and fidelity.
+    \item \textbf{Examples}: StoryGAN \cite{li_storygan_2019} was an early model that applied GANs to story visualization. TGANs-C \cite{pan_create_2018} and T2V \cite{li_video_2017} were among the initial works using GANs for text-to-video tasks involving motion.
+    \end{itemize}
+    \item \textbf{Autoregressive Transformers}:
+    \begin{itemize}
+        \item \textbf{How it works}: These models apply the transformer architecture directly to the task of video synthesis, typically operating on a sequence of discrete latent tokens representing video content. The video is generated
+        token by token in an autoregressive manner, where each new token is predicted based on the previously generated tokens and the input text prompt. Phenaki, for example, introduced the C-ViViT architecture, which modifies the Video
+        Vision Transformer (ViViT) \cite{arnab_vivit_2021} by incorporating causal attention to enable autoregressive generation along the time dimension. ViViT itself is designed to fuse both spatial and temporal information during the tokenization phase.
+        \item \textbf{Benefits}: Synthesizing video in a discrete latent space using transformers has been shown to be effective for the joint learning of textual and visual data. This approach, leveraging discretization, can offer
+        advantages such as support for multiple communication modalities, faster compression and decompression, and improved contextual understanding compared to some other methods.
+        \item \textbf{Challenges}: The primary challenge is the sequential nature of generation, which can be computationally intensive and slow, especially for generating long videos with many tokens. Ensuring long-range temporal
+        consistency purely through autoregressive prediction can also be demanding.
+        \item \textbf{Examples}: Phenaki \cite{villegas_phenaki_2022} was a pioneering model using this autoregressive transformer approach for variable-length video generation. Other models include for example VideoPoet \cite{kondratyuk_videopoet_2024}.
+    \end{itemize}
+    \item \textbf{Diffusion Models (DDPMs) and Latent Diffusion Models (LDMs)}:
+    \begin{itemize}
+        \item \textbf{How it works}: Diffusion models \cite{sohl-dickstein_deep_2015} \cite{ho_denoising_2020} operate by learning to reverse a gradual noising process. A forward process systematically adds Gaussian noise to input data (e.g., video frames or their latent representations) over a
+        series of timesteps until the data becomes indistinguishable from pure noise. The core of the model is a neural network trained to denoise this data at each step; that is, given a noisy input $z_t$ at timestep
+        $t$, the network $e_\theta(z_t, t)$ predicts the noise that was added, or equivalently, the less noisy data $z_{t-1}$. Generation starts from random noise, which is then iteratively refined by the denoising network, conditioned on input
+        prompts (like text), to produce a clean sample. \textbf{Latent Diffusion Models} (LDMs) \cite{rombach_high-resolution_2022}, such as Stable Diffusion, perform this diffusion and denoising process in a lower-dimensional continuous latent space, which is learned by an autoencoder
+        (VAE), making the process more computationally efficient. A recent advancement is the \textbf{Diffusion Transformer} (DiT) \cite{peebles_scalable_2023}, which replaces the commonly used U-Net backbone in the denoising network with a transformer architecture, offering benefits in
+        scalability and flexibility. OpenAI's Sora model is based on such a DiT architecture. DiTs often incorporate conditioning information, such as text embeddings and timestep embeddings, through mechanisms like adaptive layer normalization (AdaLN).
+        \item \textbf{Benefits}: Diffusion models have rapidly become a leading approach in text-to-video generation due to their ability to produce high-quality, diverse outputs, often outperforming GANs in balancing fidelity and diversity.
+        The transformer-based variants like DiT are highly scalable, capable of benefiting from larger datasets and increased model parameters. Models like U-ViT, which also use transformers for diffusion, have achieved state-of-the-art results
+        in image generation by treating all inputs (including time and conditioning) as tokens and employing effective architectural designs like long skip connections.
+        \item \textbf{Challenges}: The iterative nature of the denoising process, which can involve hundreds or thousands of steps, can make sampling computationally expensive, particularly for high-resolution video data. While LDMs mitigate this by
+        operating in latent space, the sampling time can still be considerable. Research into consistency models, which aim to distill the knowledge of a pre-trained diffusion model into a network that can generate samples in a single or very few
+        steps, addresses this challenge. For video, effectively adapting T2I diffusion models requires careful architectural modifications to handle temporal consistency across frames, often addressed by the temporal handler component.
+        \item \textbf{Examples}: A significant number of contemporary text-to-video models are built upon the foundation of Latent Diffusion Models, particularly Stable Diffusion. Numerous diffusion-based models, such as Make-a-video \cite{singer_make--video_2022}, Follow your pose \cite{ma_follow_2024},
+        GPT4Motion \cite{lv_gpt4motion_2024}, Dysen-VDM \cite{fei_dysen-vdm_2024}, Nuwa-XL \cite{yin_nuwa-xl_2023} are documented in recent surveys of the field (an extensive list can be found in Table A1 of Cho et al., 2024). OpenAI's Sora \cite{noauthor_sora_nodate} is also a prominent example based on a Diffusion Transformer (DiT) architecture.
+        Google's Veo 3 \cite{noauthor_veo_nodate} is another system that uses latent diffusion, where the diffusion process is applied jointly to temporal audio latents and spatio-temporal video latents. In Veo, video and audio are encoded by respective autoencoders into compressed
+        latent representations, and a transformer-based denoising network is optimized to remove noise from these noisy latent vectors during training. Furthermore, Imagen Video and Video LDM are notable video diffusion transformer systems that have advanced
+        the application of diffusion techniques from text-to-image foundations to video generation.
+    \end{itemize}
+\end{itemize}
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/latent-diffusion-arch.png}
+    \caption[Architecture of the Latent Diffusion Model]{Architecture of the Latent Diffusion Model (LDM).
+             The input image $x$ from pixel space is first compressed into a lower-dimensional latent representation $z$ by an encoder $\mathcal{E}$.
+             The forward diffusion process (shown simplified at top) progressively adds noise to $z$ yielding $z_T$.
+             The core of the LDM is a time-conditional U-Net $\epsilon_\theta$ operating in this latent space, trained to denoise $z_t$ at timestep $t$ back to $z_{t-1}$ (or predict the added noise).
+             This U-Net leverages skip connections and incorporates various conditioning modalities (like text or semantic maps) through a cross-attention mechanism, guided by embeddings from $\tau_\theta$.
+             During inference, starting from random noise $z_T$, the U-Net iteratively denoises it, conditioned on the input prompt, to produce a clean latent representation $z$.
+             Finally, a decoder $\mathcal{D}$ transforms $z$ back into pixel space to generate the high-resolution image $\tilde{x}$.
+             Image from Rombach et al. (2022) \cite{rombach_high-resolution_2022}}
+    \label{fig:ldm-diagram}
+\end{figure}
+\FloatBarrier
+
+\paragraph{3. Temporal handler}
+
+The temporal handler is a critical and unique component of text-to-video generation architectures, designed to complement the vision processor. While the vision
+processor focuses on learning and generating the visual content within each individual frame, the temporal handler is responsible for learning and modeling the
+dynamics of this content as it progresses from one frame to the next, ensuring coherent motion and consistent object appearance over time. The common mechanisms
+employed for temporal handling are illustrated in Figure 4 of Cho et al. (2024) \cite{cho_sora_2024} and are discussed below:
+
+\begin{itemize}
+    \item \textbf{Temporal attention}:
+    \begin{itemize}
+        \item \textbf{How it works}: This approach directly incorporates the temporal dimension by allowing the model to selectively attend to different frames or
+        temporal segments when generating the current frame or predicting future ones. It can be explicitly integrated into the architecture of generative transformers,
+        for instance, through the temporal dimension of an axial transformer \cite{hu_make_2022}, or via spatiotemporal attention \cite{gupta_photorealistic_2023} layers that jointly consider spatial and temporal contexts.
+        More subtle implementations include using neural Ordinary Differential Equations (ODEs) \cite{chen_neural_2019} to approximate temporal dynamics or employing bidirectional masked attention
+        transformers \cite{ahn_story_2023} that convert input frames into a temporal sequence by patchifying them.
+        \item \textbf{Benefits}: Temporal attention is often considered the most straightforward method for incorporating temporality, especially in models with inherently
+        autoregressive architectures such as those based on VQ-VAE or autoregressive transformers. This mechanism can ensure both the consistency and diversity of generated
+        frames by relying on the tokenization of input frames during training and facilitating the injection of additional conditions like context memory or motion anchors.
+        \item \textbf{Challenges}: Standard attention mechanisms can become computationally intensive with very long video sequences due to their quadratic complexity with
+        respect to sequence length. Maintaining very long-range coherence solely through attention might still require substantial model capacity and data.
+        \item \textbf{Examples}: Models like GODIVA \cite{wu_godiva_2021} (VQ-VAE vision processor), Phenaki \cite{villegas_phenaki_2022} (Autoregressive Transformer vision processor), and AnimateDiff \cite{guo_animatediff_2024} (Diffusion vision processor)
+        are listed as utilizing temporal attention as their temporal handler. Other examples include CoGVideo \cite{hong_cogvideo_2022} and VideoPoet \cite{kondratyuk_videopoet_2024}.
+    \end{itemize}
+    \item \textbf{Recurrent neural networks (RNNs)}:
+    \begin{itemize}
+        \item \textbf{How it works}: For text-to-video models that do not possess a naturally autoregressive architecture, such as many GAN-based systems, attaching an RNN is a
+        common solution for handling the temporal dimension. Long Short-Term Memory (LSTM) networks and Gated Recurrent Units (GRUs) are the two most customary RNN types used for
+        generating temporal sequencing from the input text prompt. Typically, the RNN takes the encoded text representation, a noise vector, and its previous hidden state as input
+        to produce the current hidden state, which is then passed to the frame generator to output the video frame at the current timestep.
+        \item \textbf{Benefits}: RNNs provide a well-established method for processing sequential data and introducing temporal dependencies in models where such capabilities are not
+        inherent in the main vision processor.
+        \item \textbf{Challenges}: While LSTMs and GRUs are designed to mitigate the vanishing/exploding gradient problems of simple RNNs, they can still face difficulties in capturing
+        very long-range temporal dependencies effectively in complex video sequences. To ensure both temporal consistency and content diversity across frames, GAN-based models using RNNs
+        often need to incorporate additional specialized modules, such as auxiliary frame discriminators \cite{kim_tivgan_2020}, "gist" layers \cite{li_storygan_2019} that blend local and global context, or memory-augmented recurrent transformers (MART) \cite{lei_mart_2020}.
+        \item \textbf{Examples}: Early text-to-video models like TGANs-C \cite{pan_create_2018} and StoryGAN \cite{li_storygan_2019} (both with GAN vision processors) employed RNNs for temporal handling. Other examples include Sync-DRAW \cite{mittal_sync-draw_2017},
+        ObamaNet \cite{kumar_obamanet_2017}, T2V \cite{li_video_2017}, and TivGan \cite{kim_tivgan_2021}.
+    \end{itemize}
+    \item \textbf{Pseudo-3D convolutions and attention}:
+    \begin{itemize}
+        \item \textbf{How it works}: Network inflation, specifically using pseudo-3D operations, is a widely adopted technique for incorporating temporal dimensionality into diffusion models that are often built
+        upon 2D U-Net architectures. Instead of directly replacing 2D layers with computationally heavier full 3D layers, this approach typically involves inserting a 1D temporal convolution layer after each 2D
+        spatial convolution layer. This creates a "pseudo-3D" convolutional block. Similarly, a 1D temporal attention layer can be added after a 2D spatial attention layer to form a pseudo-3D attention block. During
+        processing, the spatial layers typically handle each frame (often by temporarily merging batch and frame dimensions), while the temporal layers operate across the frame dimension to mix information and model
+        temporal dynamics. Sinusoidal positional embeddings are also commonly used to provide frame index information to the input tensor.
+        \item \textbf{Benefits}: This separable convolution \cite{chollet_xception_2017} (and attention) technique significantly reduces the computational burden compared to using full 3D operations. A key advantage is that it allows for the
+        preservation and leveraging of knowledge from powerful pre-trained 2D image generation models (whose weights in spatial layers can be kept frozen or fine-tuned), while the new temporal parameters can be
+        trained from scratch on video data. This method, pioneered by models such as Make-A-Video \cite{singer_make--video_2022}, has become a prevalent, almost standard, adaptation technique for DDPMs to accommodate video generation tasks.
+        \item \textbf{Challenges}: While more efficient than full 3D networks, these pseudo-3D layers still introduce additional computational costs. Ensuring robust temporal consistency and generating diverse
+        inter-frame dynamics often requires these techniques to be coupled with other strategies, such as sophisticated noise scheduling for diffusion \cite{ge_preserve_2024}, specialized alignment modules \cite{an_latent-shift_2023}, decoupled learning approaches \cite{chen_videocrafter2_2024},
+        or trajectory anchoring methods \cite{chen_videodreamer_2025}.
+        \item \textbf{Examples}: Make-A-Video was a pioneering diffusion model utilizing this approach. A vast majority of recent diffusion-based text-to-video models, such as Follow your pose \cite{ma_follow_2024}, Nuwa-XL \cite{yin_nuwa-xl_2023}, Tune-a-video \cite{wu_tune--video_2023},
+        Video LDM \cite{blattmann_align_2023}, Stable Video Diffusion \cite{blattmann_stable_2023-1}, and Lumiere \cite{bar-tal_lumiere_2024}, employ pseudo-3D convolutions and/or attention for temporal modeling.
+    \end{itemize}
+    \item \textbf{Large language models (LLMs) for temporal handling}
+    \begin{itemize}
+        \item \textbf{How it works}: This is a very recent trend that aims to borrow the extensive capabilities of LLMs in multimodal understanding and complex task planning for temporal modeling in video generation.
+        One straightforward application involves using an LLM to take a simple user instruction and expand it into a comprehensive sequence of scene descriptions, which are then individually fed into a (often text-to-image)
+        generation module to create a sequence of scenes \cite{cho_sora_2024}. A more subtle approach employs the LLM as a temporal encoder; here, the LLM generates temporal or scene evolution information that serves as an auxiliary condition
+        (similar to a dynamic motion anchor or plan) to the main video generation module, alongside the primary text prompt.
+        \item \textbf{Benefits}: LLMs excel at understanding complex narratives and can translate high-level textual goals into detailed, structured plans or descriptions that can guide video generation, potentially enabling
+        more complex, story-driven, or logically consistent video sequences.
+        \item \textbf{Challenges}: This is an emerging area, and the general robustness, controllability, and scalability of using LLMs for fine-grained temporal control across diverse video types are still active research topics.
+        The integration complexity of ensuring the LLM's output effectively and consistently guides the vision model without introducing errors or undesirable biases from the LLM itself (like hallucination) is a key consideration.
+        \item \textbf{Examples}: Models like GPT4Motion \cite{lv_gpt4motion_2024}, Dancing Avatar \cite{qin_dancing_2023}, FlowZero \cite{lu_flowzero_2023}, and Free-bloom \cite{huang_free-bloom_2023} leverage LLMs for their temporal handling capabilities, often in conjunction with diffusion-based vision processors.
+    \end{itemize}
+\end{itemize}
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/pseudo_3d_conv.png}
+    \caption[Pseudo-3D convolutional and attention layers from Make-A-Video]{The architecture and initialization scheme of Pseudo-3D convolutional and attention layers, as proposed in Make-A-Video, designed to extend pre-trained Text-to-Image models for temporal processing.
+    \\\textbf{Left panel (Pseudo-3D Convolutions):} Illustrates the approach where each pre-trained spatial 2D convolutional layer is followed by a newly initialized 1D temporal convolutional layer. The temporal
+    convolution is initialized as an identity function to facilitate a smooth transition from spatial-only to spatiotemporal processing, preserving learned spatial knowledge while enabling the learning of temporal dynamics.
+    \\\textbf{Right panel (Pseudo-3D Attention):} Shows temporal attention layers stacked after pre-trained spatial attention layers. Similar to the convolutional layers, the temporal attention blocks are initialized to behave
+    as an identity function (e.g., by setting the temporal projection to zero initially). These factorized spatiotemporal mechanisms allow for the effective adaptation of T2I models to video generation by managing computational
+    demands and leveraging existing knowledge. Image from Singer et al. (2022) \cite{singer_make--video_2022}.}
+    \label{fig:pseudo-3d-conv-diagram}
+\end{figure}
+\FloatBarrier
+
+\subsubsection{Pipeline-based text-to-video generation: Extending text-to-image models}
+
+An alternative and widely adopted strategy for text-to-video generation involves constructing systems by extending powerful, pre-trained
+text-to-image (T2I) models \cite{singer_make--video_2022} \cite{guo_animatediff_2024} \cite{cho_sora_2024}. This pipeline-based approach leverages the remarkable success of T2I models in synthesizing high-fidelity static
+images from text and augments them with specialized components or techniques to introduce temporal dynamics and motion. This methodology is
+particularly relevant as it aligns with the main approach taken in this thesis. The core idea is to utilize the strong visual and multimodal understanding
+learned by T2I models from vast image-text datasets, and then to specifically teach these systems "how the world moves", often using separate video data
+or purpose-built temporal modules \cite{singer_make--video_2022} \cite{guo_animatediff_2024}. This can accelerate the training of the text-to-video model as it does not need to learn visual representations from scratch \cite{singer_make--video_2022}.
+
+\paragraph{1. Foundational text-to-image (T2I) models as a base}
+
+The cornerstone of pipeline systems is typically a state-of-the-art T2I model, often a Latent Diffusion Model (LDM)
+such as Stable Diffusion \cite{rombach_high-resolution_2022}.
+
+\begin{itemize}
+    \item \textbf{How it works}: As detailed previously, T2I diffusion models generally operate by iteratively denoising a random vector in a compressed latent space (learned by
+    an autoencoder like a VAE), guided by text embeddings, with a U-Net architecture commonly serving as the denoiser to generate static images. For a visual explanation see figure \ref{fig:ldm-diagram}.
+    \item \textbf{Benefits as a foundation}: These models provide an exceptionally strong starting point due to their ability to generate diverse, high-resolution images with impressive
+    spatial detail and strong semantic alignment to input text prompts \cite{rombach_high-resolution_2022}. This proficiency is a result of their pre-training on massive image-text datasets, endowing them with rich visual priors.
+    \item \textbf{Challenges as a foundation}: Standard T2I models are designed to produce individual, independent images and inherently lack mechanisms for understanding or generating temporal
+    coherence, modeling motion, or ensuring the consistent evolution of objects and scenes over a sequence of frames \cite{guo_animatediff_2024}. Their static nature can make it difficult to introduce complex, long-range
+    temporal dynamics without significant architectural modifications or additional specialized components.
+    \item \textbf{Examples}: Stable Diffusion is a very common open-source foundation model for such pipelines. Many community projects and research initiatives begin by adapting available T2I models \cite{guo_animatediff_2024}.
+\end{itemize}
+
+\paragraph{2. Incorporating temporal dynamics and motion}
+
+This is the crucial adaptation stage, focused on transforming a T2I model, which fundamentally generates static frames, into a system capable of producing video sequences with coherent motion.
+
+\begin{itemize}
+    \item \textbf{Motion modules / Temporal layers}:
+    \begin{itemize}
+        \item \textbf{How it works}: This prominent strategy involves designing and integrating specialized neural network modules—such as temporal attention layers, 1D temporal convolutions, or
+        more complex pseudo-3D layers—into the architecture of a pre-trained T2I model, often within its U-Net denoiser \cite{singer_make--video_2022} \cite{guo_animatediff_2024} \cite{blattmann_align_2023}. These newly added modules are specifically trained on video data to learn
+        motion patterns and temporal transitions between frames \cite{guo_animatediff_2024} \cite{singer_make--video_2022}. Critically, the pre-trained weights of the T2I model responsible for spatial feature extraction and image synthesis are often kept
+        frozen or only fine-tuned minimally to preserve their powerful generative capabilities \cite{guo_animatediff_2024} \cite{cho_sora_2024}. For instance, Make-A-Video extends its base T2I model's U-Net and attention layers by incorporating
+        new spatiotemporal convolutional and attention components that are initialized to preserve the original T2I function, ensuring a smooth transition to video fine-tuning \cite{singer_make--video_2022}. Similarly, AnimateDiff
+        is a well-known open-source example that injects "motion modules," primarily based on temporal attention, into various parts of the Stable Diffusion U-Net architecture, allowing it to generate
+        animated sequences from text prompts \cite{guo_animatediff_2024}.
+        \item \textbf{Benefits}: This approach enables the powerful T2I model to generate sequences of frames that exhibit learned motion. It is often parameter-efficient, especially if only the new
+        temporal modules require extensive training or fine-tuning on video data, while the bulk of the T2I model remains unchanged \cite{guo_animatediff_2024} \cite{cho_sora_2024}. This allows researchers and developers to leverage a wide variety
+        of existing T2I models and their vast ecosystems of community-trained checkpoints and styles \cite{guo_animatediff_2024}.
+        \item \textbf{Challenges}: A key challenge is ensuring that the added temporal modules can effectively and consistently control the T2I backbone to produce coherent motion without degrading the
+        original image quality or introducing visual artifacts. The diversity and complexity of motion that can be generated might be limited if the motion modules are too simplistic or if they are trained
+        on video datasets with limited motion variety. Achieving highly complex camera movements or intricate, long-range object interactions can remain difficult.
+        \item \textbf{Examples}: AnimateDiff \cite{guo_animatediff_2024} (see figure \ref{fig:animatediff_module_insertion}) is a widely used example for adapting Stable Diffusion. Make-A-Video by Singer et al. (2022) \cite{singer_make--video_2022} explicitly details this extension of T2I models.
+        Tune-A-Video demonstrates one-shot tuning of T2I models for specific video edits/motions. Many other research works and open-source projects demonstrate adding various forms of temporal layers or
+        attention mechanisms to Stable Diffusion.
+    \end{itemize}
+    \item \textbf{Frame-to-frame generation with explicit temporal conditioning}:
+    \begin{itemize}
+        \item \textbf{How it works}: Some pipeline approaches might involve generating frames more sequentially, where the generation of the current frame is explicitly conditioned on one or more previously
+        generated frames. This can be achieved by feeding the latent representation of the previous frame(s) as an additional input to the T2I model when generating the current frame, sometimes in conjunction
+        with estimated optical flow or motion vectors to guide the transformation.
+        \item \textbf{Benefits}: This can create a very direct sense of temporal progression and allows for motion to be explicitly guided between frames if motion vectors are provided or estimated.
+        \item \textbf{Challenges}: This method is highly susceptible to error accumulation over long sequences \cite{wang_error_2025}. Small inconsistencies or artifacts in one frame can be propagated and amplified in subsequent frames,
+        leading to a degradation of quality and coherence over time (often referred to as temporal drift). Maintaining long-term consistency, especially for object appearance and global scene structure, is a significant hurdle.
+        \item \textbf{Examples}: While generating entirely new, long videos from text using purely frame-by-frame autoregressive conditioning is challenging due to error accumulation, this principle is foundational and evident
+        in several contexts and specific models, for example Phenaki \cite{villegas_phenaki_2022} or CogVideo \cite{hong_cogvideo_2022}.
+    \end{itemize}
+\end{itemize}
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/animatediff_insertion.png}
+    \caption[AnimateDiff inference architecture with Motion Module integration]{AnimateDiff's inference architecture, illustrating how Motion Modules (pre-trained separately on video data, indicated by 'Training Pipeline' in the figure) are integrated with a personalized Text-to-Image (T2I) model to generate animations. The orange-outlined "Image Layers" belong to the
+    existing personalized T2I model (e.g., a custom Stable Diffusion variant). These layers are responsible for rendering the spatial details and appearance of each video frame, processing each frame's visual content independently
+    as they would for a static image. The blue "Motion Modules of AnimateDiff" (optionally with green MotionLoRA enhancements) are specialized temporal networks, typically Transformer-based. Crucially, these modules have been
+    separately pre-trained on large video datasets to learn diverse and transferable motion patterns (motion priors). During inference, these fully trained motion modules are inserted as "plug-and-play" components within the frozen
+    architecture of the personalized T2I model. They operate across the sequence of frame latents, actively applying the learned temporal dynamics to ensure coherent motion throughout the generated animation. The combined system
+    produces an animated sequence via an iterative denoising process (from $z_t$ towards a clean $z_0$), effectively equipping static personalized T2I models with animation capabilities without needing to modify their original weights
+    for motion. (It's noteworthy that during the initial training phase of the motion modules themselves, their output layers are typically zero-initialized so they start as identity mappings. This ensures stable training when they
+    are first introduced to the T2I architecture for learning motion, before they acquire their motion-generating capabilities). Image from Guo et al. (2024) \cite{guo_animatediff_2024}.}
+    \label{fig:animatediff_module_insertion}
+\end{figure}
+\FloatBarrier
+
+\paragraph{3. Training strategies for pipeline models}
+
+\begin{itemize}
+    \item \textbf{How it works}: The strategies often involve training or fine-tuning the temporal modules (or sometimes the entire adapted model with a lower learning rate) on datasets of video clips. A notable approach,
+    used by Make-A-Video \cite{singer_make--video_2022}, is to leverage unsupervised learning on unlabeled video footage purely to learn motion dynamics, effectively decoupling the learning of visual appearance (from text-image pairs) from the learning
+    of motion (from videos without text). Other approaches might involve image-video joint training, where the model is exposed to both static images (to reinforce visual quality and text alignment) and video clips (to learn
+    temporal aspects) during its fine-tuning phase.
+    \item \textbf{Benefits}: The ability to learn motion from unlabeled videos, as demonstrated by Make-A-Video, circumvents the need for large-scale paired text-video datasets, which are significantly more challenging and
+    expensive to curate than text-image datasets or collections of unlabeled videos. This allows the system to learn general motion patterns from diverse and abundant video sources.
+    \item \textbf{Challenges}: If motion is learned purely from unsupervised videos, effectively aligning these general learned motions with specific and varied textual prompts (which dictate the content, actors, and specific actions)
+    can be non-trivial and relies heavily on the conditioning capabilities of the base T2I model \cite{singer_make--video_2022}. Biases present in the video training data (e.g., common camera movements, types of actions) can influence the types of motion the model
+    learns and prefers to generate. For example, When a model learns motion patterns (e.g., "walking," "rotating," "flowing") from videos without text labels, these motions are learned in a general, decontextualized way. The challenge
+    then arises when a text prompt requests a specific character or object to perform a specific action that requires a nuanced version of that learned motion, or a combination of motions. For example, the model might have learned a generic
+    "walking" motion, but making "an elderly astronaut walking slowly on the moon" requires precise adaptation of that general motion to the specified actor, action details, and environment.
+    \item \textbf{Examples}: The training strategy of Make-A-Video \cite{singer_make--video_2022}, which combines T2I pre-training with learning motion from unlabeled videos, is a key example. Many community-driven efforts involve fine-tuning models like AnimateDiff on specific
+    datasets to achieve particular motion styles or effects \cite{guo_animatediff_2024}.
+\end{itemize}
+
+\paragraph{4. Post-processing for enhanced output quality}
+
+A common and often essential characteristic of pipeline-based text-to-video generation systems is the inclusion of dedicated post-processing stages designed to substantially refine and enhance the initially
+generated raw sequence of frames \cite{singer_make--video_2022}. The core generative models, while powerful, may not always produce outputs that are immediately production-ready or meet desired quality standards.
+This thesis, for instance, incorporates frame interpolation in a pipeline to increase the framerate of videos.
+
+\begin{itemize}
+    \item \textbf{How it works}: Post-processing is a crucial stage in many text-to-video pipelines, designed to significantly enhance the raw video initially produced by core generative models. These core models often generate video
+    at a lower frame rate or resolution to manage the immense computational demands of video synthesis, creating a sparser initial output. This output is then passed to specialized modules for refinement. Key among these is frame
+    interpolation, which intelligently synthesizes new intermediate frames to create substantially smoother and more fluid motion. Concurrently, video super-resolution techniques increase the pixel dimensions and visual detail of each
+    frame, transforming moderately-resolved inputs into crisp, high-definition visuals by learning to infer and reconstruct fine details. Additional steps might include color correction for aesthetic consistency and tools for removing
+    visual artifacts like noise or flickering. For example, systems like Make-A-Video \cite{singer_make--video_2022} explicitly implement such a pipeline, starting with a low-resolution, low-framerate video and then using dedicated networks to interpolate frames and
+    upscale resolution in stages. This layered approach allows for the efficient creation of detailed, high-frame-rate videos that would otherwise be challenging to generate directly. Ultimately, these post-processing techniques are vital
+    for transforming a basic generated sequence into a polished, high-quality final product ready for viewing.
+    \item \textbf{Benefits}: A significant benefit of employing a modular post-processing approach is that it allows the primary text-to-video generation model to dedicate its computational resources to the computationally intensive tasks of synthesizing
+    coherent core content and fundamental motion from textual prompts. By offloading demanding operations like achieving high frame rates and resolutions to subsequent, specialized modules, the initial, intensive generation phase becomes more computationally
+    manageable and efficient. This strategic division of labor not only streamlines the process but also typically results in a higher perceived quality in the final video, as each specialized module is highly optimized for its specific enhancement task,
+    such as upscaling or frame insertion. Furthermore, such modularity offers considerable flexibility, enabling developers to select, update, or meticulously tune different post-processing tools to achieve desired aesthetic outcomes or performance benchmarks.
+    This adaptability can even empower end-users with greater control over the final product. For instance, features like user-selectable output frame rates can often be directly controlled by adjusting parameters within the frame interpolation module,
+    tailoring the video's fluidity to specific needs.
+    \item \textbf{Challenges}: While post-processing significantly enhances generated videos, it presents several challenges that require careful consideration. Post-processing stages, themselves often sophisticated AI models, can inadvertently introduce their
+    own specific visual artifacts—like unrealistic textures from super-resolution or motion distortions from frame interpolation—if not perfectly calibrated or if they encounter inputs outside their training distribution. These stages might also subtly alter the
+    intended artistic style or crucial details of the content originally synthesized by the primary model, necessitating meticulous tuning to preserve creative intent.
+    
+    A paramount and pervasive challenge also encountered is maintaining strict temporal consistency throughout all post-processing steps. For example, video super-resolution models must "hallucinate" or reconstruct fine details in a way that is perfectly coherent
+    from one frame to the next; otherwise, the newly added details can appear to shimmer or flicker distractingly. Similarly, frame interpolation techniques face the complex task of generating entirely new in-between frames that seamlessly align with the motion,
+    appearance, and identity of objects in the surrounding keyframes, avoiding any jarring discontinuities.
+
+    Finally, each additional module integrated into the post-processing pipeline inherently increases the system's overall complexity and adds to the total inference time. This cumulative computational cost can impact the speed and efficiency of video production,
+    creating a trade-off between the level of polish and the practicality of the generation process.
+    \item \textbf{Examples}: The use of dedicated post-processing modules is evident in both specially developed research systems and broader community applications. For instance, Meta AI's Make-A-Video \cite{singer_make--video_2022} model clearly outlines how its custom-designed frame
+    interpolation and super-resolution modules are essential to its full generation pipeline, playing a vital role in transforming initial low-resolution, low-framerate video drafts into polished, high-quality final outputs. Beyond such integrated systems,
+    various readily available video enhancement tools are frequently adopted. For video frame interpolation, which aims to create smoother motion by increasing frame rates, models like FILM (Frame Interpolation for Large Motion) \cite{reda_film_2022} are well-regarded; FILM
+    is known for its ability to handle significant motion effectively, often by using optical flow methods to accurately synthesize new frames. When it comes to video super-resolution for upscaling frames to higher resolutions and boosting visual detail,
+    techniques adapted from advanced image super-resolution are commonly used. A prominent example here is Real-ESRGAN \cite{wang_real-esrgan_2021}, an improvement over the original ESRGAN \cite{wang_esrgan_2018}, which is widely chosen for its robust performance in upscaling diverse real-world images and
+    video frames, making it a popular tool for enhancing AI-generated videos in many community projects.
+\end{itemize}
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figures/real_esrgan_arch.png}
+    \caption[Real-ESRGAN generator architecture for image super-resolution]{The generator architecture of the Real-ESRGAN model, adapted from the ESRGAN \cite{wang_esrgan_2018} design, for performing image super-resolution at various scaling factors. The central component, labeled "ESRGAN Arch," forms the core upscaling engine, primarily designed for a
+    x4 magnification. An input low-resolution image (or its feature representation derived from pre-processing) initially passes through a convolutional layer. It then transits a deep sequence of Residual-in-Residual Dense Blocks (RRDBs), which are specialized for extracting
+    and learning intricate hierarchical image features critical for high-quality restoration. Following the RRDBs, features undergo further convolution before being passed to an Upsampling (X4) module that increases the spatial resolution. Final convolutional layers then render
+    the high-resolution output image. A prominent long skip connection bypasses the deep RRDB stack, facilitating the flow of low-frequency information and aiding in stable training. To accommodate different effective upscaling requirements, such as x2 or x1 (often for denoising/slight
+    enhancement at near original size, or less magnification from a larger input), Real-ESRGAN employs a "Pixel Unshuffle" operation as an initial pre-processing step for these inputs. As illustrated for the x2 and x1 pathways, Pixel Unshuffle rearranges pixel data from an input image
+    into a feature map with reduced spatial dimensions but an increased number of channels (depth). This intelligent transformation ensures that the main ESRGAN architecture always receives feature maps of a consistent internal spatial size, allowing the same powerful deep network to be
+    efficiently utilized for various tasks while leveraging its deep feature learning capacity. Image from Wang et al. (2021) \cite{wang_real-esrgan_2021}.}
+    \label{fig:real_esrgan_generator}
+\end{figure}
+
+\FloatBarrier
+
+\section{General Functional and Non-Functional Objectives of the Project}
+
+\subsection{Motivation}
+
+Our primary objective for this project is to explore the current landscape of text-to-video generation by building a complete,
+functional video generation system using open-weights models and open-source infrastructure.
+
+Text-to-video generation has advanced rapidly, with state-of-the-art commercial systems such as OpenAI's Sora and Google's Veo
+demonstrating remarkable results. However, these systems remain closed, offering limited insight into their architectures and
+training methodologies. In contrast, a growing ecosystem of open-weights models---including Stable Diffusion, AnimateDiff, and
+various frame interpolation and super-resolution networks---provides an opportunity to study and combine these components into working systems.
+Our project takes advantage of this opportunity by constructing a pipeline from openly available models and examining how they interact in practice.
+
+Building such a system also requires robust software infrastructure. Open-source technologies such as Ray for distributed computing,
+FastAPI for backend services, and established machine learning frameworks enable us to create a scalable deployment that can handle
+the computational demands of video generation. A significant part of our work involves integrating these tools effectively---managing asynchronous
+processing, providing real-time progress feedback, and supporting concurrent users without degradation.
+
+A secondary objective is to make this technology accessible beyond the research community. Current open-weights models
+frequently demand technical expertise, including familiarity with command-line interfaces and model configuration. Commercial alternatives, while more user-friendly, often impose significant costs and restrict customization.
+We address this gap by wrapping our pipeline in a web application with an intuitive interface, enabling users without specialized
+knowledge to generate videos and observe the capabilities of contemporary open-weights models firsthand.
+
+\subsection{Functional Objectives}
+
+\subsubsection{Text-to-video Generation Pipeline}
+
+Our core objective is to build a text-to-video generation pipeline using a modular, pipeline-based approach. The system will
+leverage open-weights text-to-image models extended with temporal modeling capabilities---such as those provided by AnimateDiff---
+to generate base video sequences from textual prompts. To balance generation quality with computational efficiency, we plan to
+incorporate frame interpolation and upscaling stages into the pipeline. This approach allows us to generate fewer initial frames
+at lower resolution and then enhance the output through dedicated post-processing models, reducing the overall computation time while maintaining visual quality.
+
+A guiding principle for our pipeline design is flexibility. Rather than targeting fixed output specifications, we aim to support a range of
+resolutions and frame rates, allowing users to adjust these parameters based on their needs and available hardware. This flexibility also enables
+us to explore different trade-offs between generation speed and output quality throughout development.
+
+Crucially, we intend the entire system to remain runnable on consumer-grade GPUs rather than requiring data-center hardware. This constraint shapes
+our model selection and pipeline architecture decisions, prioritizing efficient models and processing strategies that can deliver acceptable
+results within the memory and compute limits of mid-range consumer hardware.
+
+\subsubsection{Configurable Generation Parameters}
+
+We aim to provide users with a wide array of configurable parameters to tailor video generation to their specific needs. At the
+most basic level, users will be able to enter a textual prompt describing the desired video content and select from a range of output specifications
+including resolution, frame rate, and video duration.
+
+Beyond these core settings, we plan to offer an advanced configuration interface for users who wish to have finer control over the generation process.
+This will include parameters such as guidance scale, which influences how closely the generated output adheres to the input prompt, as well as the
+ability to select from models pretrained with different visual styles. By providing an interface with both basic and advanced options, we aim to accommodate
+users with different levels of expertise---providing simplicity for casual users while preserving flexibility for those who wish to experiment with the underlying generation parameters.
+
+\subsubsection{Generation Tracking}
+
+We intend to build a robust infrastructure for tracking video generation tasks throughout their lifecycle. The system will persistently store generation parameters,
+status information, and results using a combination of a database for structured data and object storage for generated video files.
+This separation allows for efficient querying of generation metadata while handling large binary artifacts appropriately, and positions the system to scale as the
+number of users and generated videos grows.
+
+The internal tracking infrastructure will also serve as the foundation for user-facing progress feedback. By maintaining up-to-date status information for each
+generation task, we can expose this data to the web frontend, enabling real-time progress updates that keep users informed as their videos are being generated.
+
+\subsubsection{User Management and Security}
+
+We aim to provide a secure web application that allows users to register, log in, and access the videos they have generated.
+Authentication will be implemented using JSON Web Tokens (JWT), enabling a stateless architecture where the backend does not need to maintain
+session state between requests. This approach simplifies horizontal scaling and aligns with modern best practices for web application design.
+
+Authorization is a central concern. The system must ensure that users can only access their own generated videos and generation history---preventing unauthorized access to other users' content.
+We intend to enforce these access controls consistently across all relevant endpoints.
+
+\subsubsection{User Interface and Video Gallery}
+
+We aim to create a modern, intuitive user interface that guides users through the video generation process. The interface will
+provide a straightforward way to enter prompts, configure generation parameters, and submit generation requests. Once a generation
+is in progress, users will receive visual feedback through progress bars and status indicators, keeping them informed about how their
+request is advancing through the pipeline.
+
+Each user will have access to a personal gallery displaying the videos they have generated. The gallery will present each video
+alongside the prompt that was used to generate it, allowing users to review their past generations and the inputs that produced them.
+Users will also be able to download their videos for use outside the application and delete videos they no longer want to see.
+
+By combining accessible generation controls with a clear gallery view, we aim to provide a friendly experience that makes text-to-video generation approachable for users without technical backgrounds.
+
+\subsection{Non-Functional Objectives}
+
+\subsubsection{Performance}
+
+Video generation is a computationally intensive process, and a significant part of our development effort will focus on ensuring effective utilization
+of available system resources. This includes careful selection of models and pipeline components that balance output quality with generation speed,
+as well as optimizing how these components are orchestrated to minimize idle time and redundant computation.
+
+A key constraint guiding our performance objectives is GPU memory. We aim to build a system capable of generating good-quality videos using no more
+than 12 GB of GPU memory in its baseline configuration, scaling resource usage appropriately when users select more demanding generation parameters.
+This target reflects our goal of keeping the system runnable on consumer-grade hardware while still providing good output quality.
+
+\subsubsection{Scalability}
+
+We aim to design the system with horizontal scalability in mind, allowing it to grow from a single GPU to a cluster of multiple GPUs as demand increases.
+The architecture should support distributing generation tasks across available hardware, enabling concurrent processing of multiple user requests
+without degradation in response times.
+
+A related objective is to clearly separate computations that require GPU resources from those that can be handled by the CPU. By distinguishing between
+these workloads, the system can schedule tasks more efficiently---ensuring that expensive GPU resources are reserved for model inference while lighter tasks
+such as request handling and data management are processed independently.
+
+\subsubsection{Usability}
+
+We aim to provide a modern and friendly user interface that makes video generation approachable for users regardless of their technical background.
+The interface should guide users naturally through the generation process, presenting options clearly and avoiding unnecessary complexity.
+Where advanced parameters are available, they should be organized in a way that does not overwhelm users who simply want to enter a prompt and generate a video.
+
+Clear feedback is also essential. Users should always understand what the system is doing---whether their request is queued, in progress, or complete---and be able to
+navigate between generation and their personal gallery without confusion. Our goal is to minimize the learning curve so that new users can produce their first
+video with minimal friction.
+
+The application will support both Polish and English languages, allowing users to interact with the interface in their preferred language.
+
+\subsubsection{Maintainability}
+
+We aim to build a modular application that clearly decomposes the complexity of the system into separate, well-defined components.
+Each module should have a focused responsibility and interact with other modules through clear interfaces. This separation of concerns
+makes the codebase easier to understand, test, and extend over time.
+
+A modular architecture also facilitates future development. Individual components---such as specific models in the generation pipeline or elements of the
+backend infrastructure---can be updated, replaced, or improved independently without requiring changes throughout the entire system. This flexibility is
+particularly valuable in a rapidly evolving field like generative AI, where new models and techniques emerge frequently.
+
+\section{Prototype Implementation and Feasibility Analysis}
+
+To verify the feasibility of the proposed approach, we developed and tested a prototype pipeline implementing the core video generation functionality.
+The prototype was run on an NVIDIA RTX 4070 Super, representative of the consumer-grade hardware we are targeting.
+
+The pipeline follows a sequential processing approach consisting of four stages: initial frame generation from a textual prompt,
+temporal interpolation to increase smoothness, resolution enhancement to improve visual quality, and final video encoding.
+For frame generation we used AnimateDiff, for interpolation FILM (Frame Interpolation for Large Motion), and for upscaling Real-ESRGAN.
+
+Prototype testing confirmed that our approach is viable within the constraints we have set. AnimateDiff demonstrated acceptable computational
+efficiency on our target hardware through memory optimization techniques that keep usage within the limits of consumer GPUs. FILM interpolation
+effectively enhanced animation fluidity, allowing us to generate fewer initial frames while still achieving smooth motion. Real-ESRGAN upscaling
+enabled us to produce high-resolution output without generating at full resolution from the start, further reducing computational requirements.
+
+The feasibility study validates the technical viability of our video generation system concept and establishes a foundation for the full
+implementation described in the following chapters.
+
+\section{Risk Analysis}
+
+\subsection{Technical Risks}
+
+Our approach relies on open-weights models designed to run on consumer-grade hardware, which introduces inherent limitations.
+These models will not match the output quality of state-of-the-art commercial systems that leverage significantly larger architectures
+and data-center-grade hardware. Users may encounter inconsistent results, particularly with complex prompts or when pushing the
+boundaries of what the chosen models can reliably produce.
+
+The complexity of our system---spanning video generation, frame interpolation, upscaling, distributed task management, and a full web
+application---presents a risk of scope creep. Balancing the breadth of functionality we aim to deliver against the time and resources
+available will require careful prioritization throughout development.
+
+\subsection{Content Safety Risks}
+
+As with any generative AI system, there is an inherent risk that the models may produce inappropriate or biased content. These issues
+can stem from limitations or biases present in the training data used to develop the underlying models. The importance of AI safety
+is increasingly recognized across the industry---organizations such as Anthropic have placed safety research at the core of their mission,
+reflecting a broader understanding that responsible AI development requires proactive attention to potential harms.
+
+We do not neglect this concern. However, implementing comprehensive content moderation mechanisms is beyond the scope of this project,
+which focuses primarily on exploring the technical feasibility of text-to-video generation on consumer hardware. We acknowledge that
+any production deployment of such a system would need to incorporate appropriate safeguards to prevent the generation of harmful or
+inappropriate content.
+
+\section{Chapter Summary}
+
+This chapter has provided the foundation for understanding the text-to-video generation task and the objectives of our project.
+We began by situating text-to-video generation within the broader context of generative AI, tracing the evolution from early neural network architectures
+through GANs, VAEs, and diffusion models to the sophisticated multimodal systems emerging today.
+
+We then examined the text-to-video generation task in detail, identifying its core objectives---semantic alignment, visual quality, and temporal coherence---
+and the key challenges that make this task particularly demanding: semantic interpretation of prompts, the high dimensionality of video data, maintaining temporal consistency,
+modeling realistic motion, and the scarcity of suitable training data for research groups outside of frontier labs. We surveyed the architectural approaches to
+addressing these challenges, distinguishing between end-to-end models and pipeline-based systems that extend pre-trained text-to-image models with temporal
+modeling capabilities.
+
+With this technical background established, we presented the motivation and objectives for our project: to explore the current landscape of text-to-video generation
+by building a functional system from open-weights models and open-source infrastructure, and to make this technology accessible through a user-friendly web application.
+We outlined both functional objectives---including the generation pipeline, configurable parameters, progress tracking, user management, and the video gallery---
+and non-functional objectives concerning performance, scalability, usability, and maintainability.
+
+Our prototype implementation validated the feasibility of the proposed approach on consumer-grade hardware, demonstrating that a pipeline combining AnimateDiff, FILM, and Real-ESRGAN
+can produce acceptable results within our target constraints. We also acknowledged the risks inherent in our approach, including the limitations of open-weights models compared
+to commercial systems and the broader challenges of content safety in generative AI.
+
+The following chapters will detail the design and implementation of the complete system, describing the architecture, the technologies employed, and the evaluation of our results.

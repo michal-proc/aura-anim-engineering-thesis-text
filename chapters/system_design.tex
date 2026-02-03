@@ -1,0 +1,624 @@
+\section{Introduction}
+
+Video generation systems must address unique challenges such as managing computationally expensive AI models and scaling to handle multiple concurrent requests.
+These systems operate under strict GPU resource constraints and must remain responsive despite long-running computations.
+As a result, the overall architecture must balance performance, reliability and real-time communication between its components.
+
+In this chapter we describe the main components, their responsibilities and the communication patterns between them.
+The system is composed of a web interface, an API layer coordinating requests, a distributed generation pipeline, a relational database and object storage.
+
+The chapter also outlines how the architecture addresses key challenges such as managing long and expensive GPU computations, providing real-time feedback to users and maintaining system scalability under varying loads.
+
+\section{Architecture Overview}
+
+At the highest level, the architecture is organized into five components that handle different aspects of the video generation workflow:
+
+\begin{itemize}
+    \item \textbf{User Interface (Next.js)}: Web application for user interaction with the system
+    \item \textbf{API Server (FastAPI)}: Authentication, job submission, status queries
+    \item \textbf{Generation Pipeline (Ray Serve)}: System core - distributed video generation
+    \item \textbf{Database (PostgreSQL)}: User accounts, job metadata
+    \item \textbf{Object Storage (MinIO)}: Video files
+\end{itemize}
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/system-architecture-overview.png}
+    \caption{High-level system architecture.}
+    \label{fig:system-architecture-overview}
+\end{figure}
+\FloatBarrier
+
+\section{Detailed Architecture}
+
+\subsection{User Interface}
+
+User interface is implemented as a modern and futuristic web application built with Next.js and styled using Tailwind CSS.
+This choice provides a combination of performance-focused optimizations and a flexible component-based architecture.
+Access to the interface is restricted to authenticated users, with all API communication secured through Bearer tokens issued by the backend.
+Once authenticated, the user is presented with a clear and structured dashboard that provides an organized, paginated view of all previously generated videos.
+
+In the dashboard, users can filter, sort and browse their generated content.
+Each generated video can be viewed or downloaded in a chosen output format.
+
+The interface includes a dedicated view where users can create new video generation jobs.
+Users can choose between two modes of operation: an advanced mode offering full control over model parameters and a simplified mode intended for users less familiar with diffusion models or the application itself.
+The advanced mode exposes a wide range of configuration options, allowing experienced users to fine-tune all aspects of the generation process and adjust the model's behaviour to their preferences.
+The simplified mode, in contrast, presents a compact and streamlined form that focuses solely on the key inputs required to start a generation task.
+Both modes provide clear, contextual instructions that help users understand the available options and make effective use of the system.
+
+To enhance interactivity, the interface maintains a WebSocket connection with the backend.
+Channel provides up-to-date information about each running job, including its current state and progress.
+Users can monitor the generation with minimal delay and may cancel an active task directly from the interface.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.4\textwidth]{figures/logo.png}
+    \caption{Application logo displayed in the dashboard.}
+    \label{fig:logo}
+\end{figure}
+\FloatBarrier
+\subsection{API Server}
+
+The FastAPI backend serves as the entry point for all client requests, implementing a RESTful interface that coordinates interactions between system layers.
+
+Authentication is implemented using the JWT tokens. After successful login, the system creates access token used for API authentication.
+The user password is hashed and stored in the database, providing the high level of security.
+Authentication failures return an HTTP 401 status code.
+
+The API Server performs request validation using Pydantic schemas - each incoming request is validated against type-safe data models that enforce constraints on required fields, types and value ranges.
+This early validation prevents malformed data from reaching business logic or the database.
+Invalid requests are rejected immediately with HTTP 4xx status codes and descriptive error messages indicating the specific validation failure.
+
+The Server implements ownership-based access control, ensuring users can only access their own jobs and videos.
+Each authenticated request includes the user ID extracted from the JWT token, which is validated against the job owner ID stored in the database.
+Attempts to access other users' resources result in HTTP 403 Forbidden responses.
+
+API Server is stateless, storing no session information in memory. All session state is maintained through JWT tokens and database records.
+This design enables horizontal scaling by deploying multiple instances behind a load balancer without requiring session affinity or shared session storage.
+The Server uses SQLAlchemy connection pooling to efficiently manage database connections across concurrent requests, preventing connection exhaustion under heavy load.
+
+\subsection{Video Generation Pipeline}
+
+The core pipeline is designed as a composition of multiple independent stages, each deployed as a separate Ray Serve deployment.
+This modular architecture addresses the varying computational demands of different processing stages, enables independent scaling, efficient resource utilisation and enables component-level replacements without system-wide code changes, as well as adding new pipeline stages with minimal system changes.
+
+Ray Serve provides autoscaling capabilities that allow each component to scale independently based on load and resources available.
+Unlike monolithic approaches where the entire pipeline must scale as one unit, this design allows CPU-intensive stages (preprocessing and postprocessing) to scale independently from GPU-intensive stages (generation, interpolation and upscaling).
+This separation is crucial because GPU resources are typically more constrained and more expensive than CPU resources.
+
+The pipeline consists of five components:
+
+\begin{itemize}
+    \item \textbf{Preprocessor}: Optimize parameters for downstream components
+    \item \textbf{Video Generator}: Create base frames using AnimateDiff
+    \item \textbf{Frame Interpolator}: Increase frame rate using FILM model
+    \item \textbf{Frame Upscaler}: Upscale frames using ESRGAN
+    \item \textbf{Postprocessor}: Trim, crop and encode final video
+\end{itemize}
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/pipeline-detailed.png}
+    \caption{Video generation pipeline architecture.}
+    \label{fig:pipeline-detailed}
+\end{figure}
+\FloatBarrier
+
+\subsubsection{Preprocessor}
+
+The \textbf{Preprocessor} serves as the pipeline's validation and configuration stage, ensuring all input parameters meet the technical constraints imposed by downstream components.
+It ensures that video dimensions are mutiples of 8, adjusting them upward if necessary.
+This requirement stems from the Stable Diffusion VAE's architecture which performs downsampling in 8x8 pixel blocks - non-compliant dimensions would cause encoding failures in the diffusion model.
+Because AnimateDiff generates base frames at a fixed 8 FPS and reduced resolution to minimize VRAM usage and processing time - the Preprocessor determines how many base frames are needed for the requested duration, then calculates the interpolation factor required to reach the target FPS in later stages.
+Similarly, it computes the downscaling factor for base generation, ensuring the VideoGenerator operates within hardware constraints while the Frame Upscaler later restores the desired resolution.
+For example, a request for 1024x1024 at 24 FPS might be configured as 512x512 base generation at 8 FPS, followed by 2x upscaling and 3x frame interpolation.
+
+\subsubsection{Video Generator}
+
+The \textbf{Video Generator} is the pipeline's most computationally intensive component, responsible for creating the base frame sequence from the text prompt.
+It implements AnimateDiff with Stable Diffusion as the underlying architecture, applying iterative denoising in the VAE latent space to generate temporally coherent frames.
+
+The generator operates under strict VRAM constraints imposed by our development environment (NVIDIA RTX 4070 Super with 12GB VRAM).
+
+Generating high-resolution videos directly is infeasible - memory usage exhibits asymptotically quadratic growth with frame resolution, as both the latent representation size and attention map dimensions scale with the square of pixel count.
+For example, doubling the resolution from 512x512 to 1024x1024 increases pixel count by 4x and VRAM requirements by approximately 3-4x due to attention mechanism overhead.
+Therefore, the generator produces frames at reduced resolution, delegating upscaling to the specialized Frame Upscaler component.
+
+Similarly, generating at high frame rates would multiply VRAM requirements linearly. Therefore, generator operates at a fixed 8 FPS, producing smooth motion at this base rate, while the Frame Interpolator later synthesizes intermediate frames to reach target frame rates, multiples of 8.
+
+Generation typically takes 60-240 seconds per job depending on resolution and frame count.
+
+\subsubsection{Frame Interpolator}
+
+The \textbf{Frame Interpolator} increases frame rate by synthesizing intermediate frames between AnimateDiff's base frames.
+
+The implementation uses FILM (Frame Interpolation for Large Motion), chosen for its superior handling of complex motion compared to traditional optical flow methods like RIFE.
+FILM employs a multi-scale feature pyramid that jointly estimates optical flow and interpolation weights, producing smoother motion with fewer artifacts.
+
+The interpolation factor is determined by the Preprocessor based on the ratio between target FPS and AnimateDiff's base rate of 8 FPS.
+For example, requesting 24 FPS requires 3x interpolation, inserting 2 synthetic frames between each pair of base frames.
+Supported target frame rates are limited to multiples of 8 (14, 24, 32 FPS) to ensure integer interpolation factors.
+
+Interpolation is optional - if the target FPS matches the base 8 FPS, this stage is skipped entirely.
+
+Processing typically takes 15-30 seconds per job, depending on the number of frames and interpolation factor.
+
+\subsubsection{Frame Upscaler}
+
+The \textbf{Frame Upscaler} enhances resolution using super-resolution neural network.
+
+The implementation uses Real-ESRGAN (Enhanced Super-Resolution Generative Adversarial Network), chosen for its robustness to AI-generated image artifacts compared to alternatives like EDSR.
+
+The upscaling factor is determined by the Preprocessor based on the ratio between target resolution and maximum base generation resolution.
+For example, requesting 1024x1024 output from 512x512 base frames requires 2x upscaling.
+
+Upscaling is optional - if the target resolution matches the base generation resolution, this stage is skipped entirely.
+
+Processing typically takes 20-40 seconds per job, depending on the number of frames and upscaling factor.
+
+\subsubsection{Postprocessor}
+
+The \textbf{Postprocessor} finalizes the video by performing trimming, cropping, and encoding operations to produce the output file.
+
+After generation, interpolation and upscaling, the frame sequence may exceed the exact target duration or dimensions.
+The Postprocessor trims frames to achieve precise duration, and crops them to match the user's specified resolution.
+The implementation supports multiple output formats:
+
+\begin{itemize}
+    \item MP4
+    \item GIF
+    \item WebM
+\end{itemize}
+
+The component processes the final frame sequence, encoding it to the target format and uploading the result to MinIO object storage.
+
+Processing typically takes 10-30 seconds per job, depending on the number of frames, output format and encoding parameters.
+
+\subsection{Data Persistence}
+\subsubsection{Database}
+
+The system uses PostgreSQL as the relational database for storing structured metadata.
+
+The schema consists of four main tables:
+
+\begin{itemize}
+    \item \textbf{User}: account information
+    \item \textbf{VideoGenerationJob}: job status and progress tracking
+    \item \textbf{VideoGenerationJobParameters}: generation parameters
+    \item \textbf{VideoGenerationJobResult}: output metadata
+\end{itemize}
+
+SQLAlchemy serves as the ORM layer, providing a Python interface to database operations. Connection pooling prevents connection exhaustion under heavy load.
+
+\subsubsection{Storage}
+
+The system uses MinIO for object storage.
+MinIO provides S3-compatible APIs for storing and retrieving large binary files, making it suitable for handling generated video content.
+
+\subsection*{} % Not so pretty, but I don't know how to move back to higher level
+The dual-storage architecture separates concerns and optimizes performance. PostgreSQL excels at indexed queries and relational integrity, while MinIO handles large binary files efficiently.
+This separation also enables independent scaling - database capacity can grow through read replicas, while storage capacity scales through MinIO's distributed mode.
+
+\section{Technological Stack}
+
+The system is built using a modern technology stack selected to address the specific challenges of video generation workloads while maintaining developer productivity and system maintainability.
+The stack combines established frameworks with specialized libraries for machine learning and distributed computing.
+Technology choices prioritize three key criteria: efficient GPU resource utilization for computationally intensive video generation,
+robust support for asynchronous operations to handle long-running tasks, and proven scalability patterns for managing concurrent user requests.
+This section describes the core technologies employed across the system architecture, explaining their roles and the rationale behind their selection.
+
+\subsection{Backend Technologies}
+
+The backend infrastructure is built on Python and FastAPI, providing a robust foundation for implementing REST APIs and managing asynchronous operations.
+
+\subsubsection{Python}
+
+Python serves as the primary programming language for the backend, selected for its dominant position in the machine learning ecosystem and extensive library support for scientific computing.
+The language's first-class support for asynchronous programming through async/await syntax enables efficient handling of I/O-bound operations without blocking execution threads.
+Python's dynamic typing combined with type hints allows for rapid development while maintaining code clarity through static code analysis tools.
+
+The rich ecosystem of Python libraries provides ready-made solutions for common tasks: SQLAlchemy for database operations, Pydantic for data validation, and PyJWT for token-based authentication.
+This extensive library support accelerates development by reducing the need for custom implementations of standard functionality.
+
+\subsubsection{FastAPI}
+
+FastAPI was chosen as the web framework for implementing the RESTful API server due to its modern design and performance characteristics.
+The framework provides automatic API documentation generation through OpenAPI (Swagger) and JSON Schema, creating interactive documentation that simplifies API exploration and testing during development.
+
+FastAPI's native support for asynchronous request handling enables the server to efficiently manage concurrent connections without spawning multiple threads or processes.
+When handling long-running operations such as video generation job submissions, the framework can yield control while waiting for I/O operations, allowing other requests to be processed concurrently on the same thread.
+
+The framework integrates tightly with Pydantic, leveraging type annotations for automatic request validation and serialization.
+API endpoints define expected request and response schemas using Python type hints, and FastAPI automatically validates incoming data against these schemas before the request handler executes.
+This approach eliminates boilerplate validation code and ensures type safety throughout the request lifecycle.
+
+Dependency injection is a core feature of FastAPI, used extensively for managing cross-cutting concerns such as database sessions and user authentication.
+Dependencies are declared using function parameters, and the framework automatically resolves and injects them when handling requests.
+This pattern is particularly valuable for authentication, where a dependency extracts and validates JWT tokens, making the authenticated user object available to endpoint handlers.
+
+FastAPI's performance characteristics align well with the system's requirements.
+Built on Starlette and using uvicorn as the ASGI server, the framework achieves request handling speeds comparable to Node.js and Go frameworks while maintaining Python's development productivity advantages.
+
+\subsection{Frontend Technologies}
+
+The user interface is implemented using Next.js and TypeScript, providing a modern, type-safe foundation for building a responsive web application.
+
+\subsubsection{Next.js}
+
+Next.js serves as the primary framework for the frontend, providing a robust foundation for building a responsive and highly optimized web application.
+Its architecture combines the flexibility of React with an advanced tooling ecosystem that simplifies development while ensuring strong performance characteristics.
+The framework offers server-side rendering (SSR) and static site generation (SSG), both of which contribute to reduced load times and improved perceived responsiveness.
+SSR enables the server to pre-render views before they are sent to the browser, improving initial load performance, while SSG allows pages with static content to be generated at build time and served instantly.
+Additionally, Next.js automatically optimizes assets by splitting bundles and delivering only the resources required for each view.
+Next.js also includes automatic asset optimization and bundle splitting to deliver only the resources required for each view.
+As part of this optimization toolchain, the \texttt{next/image} component provides built-in responsive image handling, automatically generating appropriate sizes and formats based on the user's device and improving loading performance.
+
+Next.js includes a built-in router that maps the directory structure directly to application routes, removing the need for manual configuration and keeping navigation predictable as the project grows.
+The reactive nature of React enables the interface to update efficiently in response to user interactions and backend events, while Zustand provides lightweight global state management.
+For all asynchronous data operations, particularly those involving API communication, the application uses TanStack Query, which handles fetching, caching, and synchronization of data, ensuring consistent and up-to-date information across the interface.
+
+Next.js also supports internationalization (\texttt{i18n}), which is used by the system to provide both Polish and English versions of the interface.
+Built-in routing with locale detection enables seamless transitions between languages without duplicating components or logic.
+Architecture allows new languages to be added easily by supplying an additional \texttt{JSON} language package.
+
+\subsubsection{TypeScript}
+
+TypeScript was adopted as the primary language for frontend development to provide static type checking and improved developer experience.
+Type annotations catch errors at compile time rather than runtime, reducing bugs related to incorrect data types, undefined values or accessing non-existent object properties.
+
+The type system is particularly valuable when working with API responses from the FastAPI backend.
+TypeScript interfaces define the expected structure of data returned from each endpoint, and the compiler verifies that components handle this data correctly.
+
+TypeScript's integration with modern IDEs provides intelligent code completion and inline documentation.
+When working with complex objects such as video generation parameters or job status responses, the editor can suggest available properties and their types, reducing the need to constantly reference API documentation.
+
+The gradual typing system allows the codebase to balance strictness with pragmatism - critical business logic benefits from comprehensive type coverage, while less critical utility functions can use more permissive types when appropriate.
+This flexibility accelerates development without sacrificing the safety benefits that motivated TypeScript adoption.
+In addition, the presence of static types significantly simplifies long-term maintenance and enables the project to scale more easily as new features and modules are introduced.
+
+\subsubsection{Tailwind CSS}
+
+Tailwind CSS is employed as the styling framework for the user interface.
+Its utility-first approach enables rapid development of consistent and responsive layouts without the need to write custom CSS for each component.
+Tailwind accelerates the design process, reduces stylesheet complexity and ensures uniform visual structure across the entire application.
+Small portions of component-specific styling were implemented using SCSS to complement Tailwind's utilities.
+
+\subsection{Infrastructure Technologies}
+
+The infrastructure layer provides the foundational services for data persistence, object storage, and distributed computing, enabling the system to handle GPU-intensive workloads efficiently.
+
+\subsubsection{Ray Serve}
+
+Ray Serve serves as the distributed serving framework for the video generation pipeline, chosen specifically for its ability to manage GPU resources and scale machine learning workloads across multiple nodes.
+The framework builds on Ray's distributed computing capabilities, providing model serving abstractions optimized for deep learning inference.
+
+Ray Serve's deployment model allows the generation pipeline to be deployed as a collection of independent replicas, each capable of handling video generation requests.
+The framework automatically distributes incoming requests across available replicas using configurable routing strategies, ensuring efficient utilization of GPU resources.
+When multiple users submit generation jobs simultaneously, Ray Serve's scheduler assigns each request to an available replica, preventing resource contention and maintaining predictable response times.
+
+The framework provides built-in support for autoscaling based on request queue depth and resource utilization.
+As the number of pending generation jobs increases, Ray Serve can automatically spawn additional replicas on available GPU nodes, expanding capacity to meet demand.
+Conversely, during periods of low activity, the framework can scale down replicas to conserve resources.
+
+Ray Serve integrates seamlessly with PyTorch and other machine learning frameworks, allowing the generation pipeline to load models directly into GPU memory and maintain them across multiple requests.
+This persistent model loading can eliminate the overhead of repeatedly loading multi-gigabyte model weights for each generation request, significantly improving throughput.
+
+The framework's fault tolerance mechanisms ensure system resilience in the face of hardware failures.
+If a GPU node becomes unavailable, Ray automatically detects the failure and redistributes pending requests to healthy replicas.
+Failed replicas are restarted on available nodes, restoring full system capacity without manual intervention.
+
+\subsubsection{PostgreSQL}
+
+PostgreSQL serves as the primary relational database, storing user accounts, job metadata, and authentication tokens.
+The database was selected for its proven reliability, ACID compliance, and rich feature set for handling complex queries and ensuring data integrity.
+
+The database schema leverages PostgreSQL's support for foreign key constraints to maintain referential integrity between related entities.
+User accounts, generation jobs, and refresh tokens are linked through foreign key relationships, ensuring that orphaned records cannot exist in the database.
+When a user account is deleted, CASCADE constraints automatically remove associated jobs and tokens, maintaining database consistency.
+
+PostgreSQL's transactional capabilities ensure that complex operations involving multiple tables complete atomically.
+When creating a new generation job, the system inserts records into both the jobs table and the job parameters table within a single transaction.
+If any part of the operation fails, the entire transaction rolls back, preventing partial state from persisting in the database.
+
+The database provides indexing capabilities that optimize query performance for common access patterns.
+Indexes on user IDs and job status fields accelerate queries that retrieve a user's jobs or filter jobs by their current state.
+
+PostgreSQL's connection pooling integration through SQLAlchemy ensures efficient management of database connections.
+Rather than opening a new connection for each API request, the application maintains a pool of persistent connections that are reused across requests.
+This approach reduces connection establishment overhead and prevents connection exhaustion under high load.
+
+\subsubsection{MinIO}
+
+MinIO provides S3-compatible object storage for generated video files, chosen for its simplicity, performance, and compatibility with industry-standard APIs.
+The storage service runs as a containerized application, offering a lightweight alternative to managed cloud storage services while maintaining the same programming interface.
+
+The object storage architecture separates video file storage from the database, avoiding the performance and scalability issues associated with storing large binary objects in relational databases.
+When a video generation job completes, the pipeline writes the output file directly to MinIO and stores only the object key in the PostgreSQL database.
+This separation allows the database to remain optimized for metadata queries while MinIO handles the high-throughput demands of video file storage and retrieval.
+
+The S3-compatible API enables the application to interact with MinIO using the minio Python client library.
+This compatibility provides flexibility for future migrations to managed cloud storage services like Amazon S3 or Google Cloud Storage without requiring significant code changes - primarily endpoint URL and credentials configuration.
+Additionally, the containerized nature of MinIO simplifies deployment across different cloud platforms, allowing the storage layer to be deployed on Azure Kubernetes Service (AKS)
+or Google Kubernetes Engine (GKE) alongside other system components while maintaining consistent S3-compatible interfaces.
+
+\subsection{Machine Learning Libraries}
+
+The video generation capabilities are built on PyTorch and specialized libraries from the Hugging Face ecosystem, leveraging pre-trained models for high-quality video generation.
+
+\subsubsection{PyTorch}
+
+PyTorch serves as the foundational deep learning framework for the video generation pipeline, chosen for its flexibility, strong GPU acceleration support, and widespread adoption in the research community.
+The framework provides tensor operations optimized for GPU execution, enabling efficient processing of the high-dimensional data involved in video generation.
+
+PyTorch's dynamic computation graph allows the generation pipeline to adapt model behavior at runtime based on input parameters.
+Unlike static graph frameworks, PyTorch constructs the computation graph during forward passes, enabling conditional logic and variable-length sequences without pre-compilation.
+This flexibility is particularly valuable for video generation, where output dimensions and processing steps may vary based on user-specified parameters like frame count and resolution.
+
+PyTorch's CUDA integration provides seamless access to GPU acceleration without requiring low-level CUDA programming.
+Tensors and models can be moved to GPU memory with simple method calls, and subsequent operations automatically execute on the GPU.
+This abstraction allows the pipeline to leverage GPU computational power while maintaining code readability.
+
+\subsubsection{Diffusers}
+
+The Diffusers library from Hugging Face provides high-level abstractions for working with diffusion-based generative models.
+The library handles the complex implementation details of the diffusion process, allowing the system to focus on pipeline configuration and parameter tuning rather than low-level model operations.
+
+Diffusers offers pre-built pipeline implementations that encapsulate the entire generation workflow.
+The system loads these pipelines by specifying a model identifier from Hugging Face's model hub, and the library handles all aspects of model initialization, including downloading weights, configuring schedulers, and setting up the inference process.
+This abstraction eliminates the need to manually manage individual model components or implement the denoising algorithms.
+
+The library's model hub integration enables direct loading of pre-trained models from Hugging Face repositories.
+Models are downloaded and cached locally on first use, then loaded from disk for subsequent generation requests.
+This caching mechanism eliminates redundant downloads and enables offline operation once models are cached.
+
+Diffusers provides a consistent API across different model architectures and generation approaches.
+Whether using AnimateDiff for video generation or standard Stable Diffusion variants, the interaction pattern remains similar - instantiate a pipeline with a model identifier, configure generation parameters, and invoke the generation method.
+This consistency simplifies experimentation with different models and techniques.
+
+The library supports various optimization techniques that improve generation speed and reduce memory requirements.
+Half-precision (FP16) computation reduces memory utilisation and accelerates tensor operations on compatible GPUs.
+These optimizations can be enabled through simple configuration parameters when initializing pipelines, without requiring manual tensor type conversions or custom CUDA kernels.
+
+\subsection{Pre-trained Models}
+
+The system employs a pipeline-based approach to video generation that leverages multiple pre-trained models working together, rather than relying on a single end-to-end video generation model.
+This modular architecture combines text-to-image diffusion models with motion modules and both interpolation and upscaling techniques to synthesize videos from text prompts.
+
+\subsubsection{Stable Diffusion Models}
+The pipeline utilizes \textbf{text-to-image diffusion models} as the foundation for visual content generation.
+These models, trained on large-scale image datasets, understand the relationship between textual descriptions and visual concepts.
+By applying these models iteratively across video frames while maintaining temporal coherence through AnimateDiff's motion modules, the system generates videos that align with the input text prompt while exhibiting smooth motion.
+
+\subsubsection{AnimateDiff}
+\textbf{AnimateDiff} serves as the core technique for introducing temporal consistency to still images generated by diffusion models.
+AnimateDiff extends pre-trained text-to-image models by injecting motion modules that learn temporal dependencies between frames.
+These motion modules are trained separately and can be combined with various base image generation models, providing flexibility in choosing the visual style and quality characteristics of the generated videos.
+
+\subsubsection{FILM Interpolator}
+\textbf{FILM} improves quality by increasing the frame rate of generated videos.
+After the diffusion process generates base frames, interpolation model synthesize intermediate frames to achieve higher frame rates and smoother motion.
+This approach reduces the computational cost of generating every frame through the full diffusion process while maintaining visual quality.
+
+\subsubsection{Real-ESRGAN Upscaler}
+\textbf{Real-ESRGAN} enhances resolution of generated videos.
+Since generating high-resolution frames directly through diffusion is computationally- and memory-intensive, the system generates frames at lower resolution and then applies upscaling.
+Real-ESRGAN, trained on degraded real-world images, performs resolution enhancement while preserving temporal consistency and preserves the details that would be lost in traditional interpolation methods.
+
+\subsection*{}
+All models are sourced from open repositories on Hugging Face and GitHub, eliminating the need for expensive model training infrastructure.
+Models are identified by their repository names and loaded dynamically based on configuration parameters, allowing the system to support different model combinations for various use cases:
+
+\begin{itemize}
+\item \textbf{Base image models}: Stable Diffusion variants and other text-to-image models that determine the visual style
+\item \textbf{Motion modules}: AnimateDiff motion adapters trained for different motion characteristics
+\item \textbf{LoRA adapters}: Low-Rank Adaptation modules that fine-tune the base models for specific visual styles or subjects
+\end{itemize}
+
+Model weights are stored separately from application code and cached locally after first download.
+
+\subsection{Supporting Tools and Libraries}
+
+Beyond the core technology stack, several supporting tools facilitate development, deployment, and system integration.
+
+\subsubsection{Docker and Docker Compose}
+
+Docker containerization provides consistent deployment environments across development and production systems.
+Each system component - Ray Serve cluster, PostgreSQL database, and MinIO storage - runs in isolated containers with explicitly defined dependencies and configurations.
+
+Containerization addresses the "works on my machine" problem by packaging applications with their entire runtime environment.
+Python dependencies, system libraries, and configuration files are bundled into immutable container images, ensuring that the application behaves identically regardless of the host system.
+This consistency is particularly valuable for the video generation pipeline, which depends on specific versions of CUDA drivers, PyTorch, and diffusion model libraries that can be difficult to configure manually.
+
+Docker Compose orchestrates multi-container deployments for local development and testing environments.
+A single \texttt{docker-compose.yml} file defines all system components, their network connections, volume mounts, and environment variables.
+Developers can launch the entire system stack with a single command, eliminating the need to manually start and configure each service.
+
+The compose configuration establishes networks that enable inter-container communication while isolating the system from the host network.
+The FastAPI backend communicates with PostgreSQL and MinIO using service names as hostnames, with Docker's internal DNS resolving these names to container IP addresses.
+This approach simplifies configuration management - connection strings reference service names rather than hardcoded IP addresses that might change between deployments.
+
+Volume mounts persist data across container restarts, ensuring that database contents, cached model weights, and generated videos survive container lifecycle events.
+Named volumes store PostgreSQL data and MinIO objects, while bind mounts during development allow code changes to be immediately reflected inside containers without rebuilding images.
+
+GPU access within Docker containers is enabled through NVIDIA Container Toolkit, which provides the necessary runtime components to expose host GPU devices to containerized applications.
+The toolkit allows containers to access CUDA libraries and GPU hardware by mounting the required device files and driver libraries from the host system.
+Docker Compose configurations specify GPU resource requirements using the \texttt{deploy.resources.reservations.devices} syntax, declaring which GPUs should be accessible to each container.
+The Ray Serve container receives GPU access and internally manages the distribution of GPU resources across multiple pipeline deployment replicas, with Ray's scheduler handling the allocation of specific GPUs to individual generation requests.
+This architecture allows a single Ray Serve container to efficiently orchestrate multiple concurrent video generation jobs across available GPU resources.
+
+\subsubsection{SQLAlchemy}
+
+SQLAlchemy serves as the Object-Relational Mapping (ORM) layer between the Python application code and PostgreSQL database.
+The library provides a high-level abstraction that allows the application to interact with database records as Python objects rather than writing raw SQL queries.
+
+Database tables are represented as Python classes, with table columns defined as class attributes.
+Relationships between tables - such as the one-to-many relationship between users and generation jobs - are expressed through SQLAlchemy relationship definitions that automatically handle foreign key constraints and join operations.
+
+The ORM generates SQL queries automatically based on Python operations, reducing the likelihood of SQL injection vulnerabilities and syntax errors.
+When the application queries for a user's jobs, SQLAlchemy constructs the appropriate SELECT statement with WHERE clauses and JOIN operations, parameterizing user-supplied values to prevent injection attacks.
+
+SQLAlchemy's session management provides transaction boundaries and change tracking.
+Operations on database objects are grouped into sessions, with changes automatically flushed to the database when the session commits.
+If an error occurs during a transaction, the session can be rolled back, ensuring that partial changes don't persist in the database.
+
+\subsubsection{Pydantic}
+
+Pydantic provides data validation and settings management throughout the application.
+The library defines data schemas using Python type annotations, automatically validating data against these schemas and providing detailed error messages when validation fails.
+
+API request and response models are defined as Pydantic classes, specifying the expected structure, types, and constraints for each field.
+When the FastAPI backend receives a video generation request, Pydantic validates if all required parameters are present, numeric values fall within acceptable ranges, and string fields match expected patterns.
+
+The library's integration with FastAPI enables automatic request validation at the framework level.
+Invalid requests are rejected before reaching endpoint handlers, with HTTP 422 responses containing detailed information about which fields failed validation and why.
+This early validation prevents malformed data from reaching business logic or the database.
+
+Pydantic also manages application configuration, loading settings from environment variables with type conversion and validation.
+This approach centralizes configuration management and catches configuration errors at application startup rather than runtime.
+
+\subsubsection{Bcrypt}
+\textbf{bcrypt} provides password hashing functionality using the bcrypt algorithm, specifically designed for secure password storage.
+When a user registers or changes their password, bcrypt hashes the plaintext password with a randomly generated salt, producing a hash that can be safely stored in the database.
+
+The adaptive nature of bcrypt allows the system to increase the work factor as computing power advances, maintaining security against increasingly powerful hardware.
+During authentication, the provided password is hashed using the same algorithm and compared to the stored hash - if they match, the password is correct.
+This one-way hashing ensures that even if the database is compromised, attackers cannot retrieve plaintext passwords.
+
+\subsubsection{PyJWT}
+\textbf{PyJWT} implements JSON Web Token (JWT) encoding and decoding for the authentication system.
+The library creates digitally signed tokens containing user claims such as user ID and expiration timestamp, ensuring that tokens cannot be tampered with without detection.
+
+When a user successfully authenticates, PyJWT generates an access token signed with the application's secret key.
+The token includes the user ID and an expiration time, encoded as a compact JSON structure.
+Subsequent API requests include this token in the Authorization header, and PyJWT verifies the signature and checks expiration before extracting the user ID claim.
+
+The library supports multiple signing algorithms, with the system using HMAC-SHA256 (HS256) for symmetric signing.
+This algorithm provides strong cryptographic guarantees while maintaining efficiency for the high-frequency token validation operations required by the API server.
+
+PyJWT's automatic expiration handling simplifies token lifecycle management - expired tokens are automatically rejected during verification, eliminating the need for manual timestamp comparisons.
+
+\subsubsection{WebSocket}
+
+WebSockets provide a full-duplex communication channel between the frontend and backend, enabling real-time bidirectional data exchange.
+In contrast to traditional HTTP polling, where the client must continuously issue requests to check for new data, a WebSocket connection remains open and allows the server to push updates immediately when state changes.
+Eliminating polling removes unnecessary request overhead, reduces latency, and lowers both network and computational load on the system.
+
+In this system, WebSockets are used to continuously stream job-related information, including the current state and progress of video generation tasks.
+The persistent connection ensures that users receive timely updates during long-running computations.
+This mechanism improves responsiveness and user experience compared to periodic polling, which would introduce unavoidable delays and unnecessary network traffic.
+
+\section{Testing and Quality Assurance}
+
+The system's reliability and correctness are verified through structured manual testing supported by API mocking tools.
+
+\subsection{Manual Testing and API Mocking}
+
+Mockoon is used to simulate API behaviour independently of the backend state, enabling frontend development to proceed without waiting for backend features to be completed.
+This setup allows both sides of the system to develop and test independently, eliminating implementation blockers and allowing UI components to be validated early in the development cycle.
+
+\section{Performance Analysis}
+
+This section presents performance measurements of the video generation pipeline, collected on hardware representative of consumer-grade workstations.
+Understanding these characteristics is essential for capacity planning and setting realistic user expectations.
+
+\subsection{Test Environment}
+
+All benchmarks were conducted on a system equipped with:
+\begin{itemize}
+    \item \textbf{GPU}: NVIDIA RTX 4070 Super (12GB VRAM)
+    \item \textbf{RAM}: 32GB DDR5 
+    \item \textbf{CPU}: AMD Ryzen 9 7900
+\end{itemize}
+
+The system ran Ubuntu 24.04 under WSL on Windows 11.
+
+\subsubsection{Generation Performance}
+
+Figure ~\ref{fig:perf-generation} presents end-to-end generation times for the complete pipeline across different target resolutions and video durations.
+All measurements were conducted at 8 FPS base frame rate.
+For resolutions above 512x512, the pipeline generates base frames at 512x512 and applies upscaling to reach target resolution.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/performance_measurements.png}
+    \caption{Total generation time across the complete pipeline for various video lengths and resolutions at 8 FPS.}
+    \label{fig:perf-generation}
+\end{figure}
+\FloatBarrier
+
+The measurements show linear scaling with video duration for all resolutions.
+Low resolutions (128x128 and 256x256) complete in 12-22 seconds and 18-37 seconds respectively for the 2-6 second duration range.
+
+The 512x512 resolution, serving as the base generation target, requires 38-110 seconds across the tested durations.
+This resolution provides the optimal balance between quality and processing time for the pipeline.
+
+Higher resolutions demonstrate the efficiency of the upscaling approach.
+Generating 1024x1024 video takes 45-125 seconds, adding only 7-15 seconds of upscaling overhead to the 512x512 baseline.
+In contrast, direct 1024x1024 generation proved impractical: approximately 60 seconds for 2-second videos, approximately one hour for 5 seconds, and CUDA out-of-memory failures at 6 seconds.
+The 2048x2048 target requires 55-170 seconds, still completing in under 3 minutes for 6 seconds of video.
+
+Notably, the variance in measurements (visible as scatter in the data points) remains relatively small across all resolutions, indicating stable performance characteristics.
+
+\subsection{Performance Impact of Interpolation}
+
+Figures ~\ref{fig:interpolation_16_fps} and ~\ref{fig:interpolation_24_fps} compare generation times for two approaches: baseline generation where all frames are produced through the diffusion process, and the pipeline's interpolation strategy where frames are generated at 8 FPS and intermediate frames synthesized using FILM.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/interpolation_16_fps.png}
+    \caption{Generation time comparison for 16 FPS. The interpolation approach achieves nearly 10x speedup for longer videos.}
+    \label{fig:interpolation_16_fps}
+\end{figure}
+\FloatBarrier
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+
+    \includegraphics[width=0.85\textwidth]{figures/interpolation_24_fps.png}
+    \caption{Generation time comparison for 24 FPS. The interpolation approach achieves nearly 20x speedup for longer videos.}
+    \label{fig:interpolation_24_fps}
+\end{figure}
+\FloatBarrier
+
+The performance gains from interpolation are dramatic.
+For 16 FPS output, baseline generation requires 80-1550 seconds across the 2-6 second duration range. 
+Notably, the baseline curve in both cases exhibits non-linear growth: while shorter videos scale approximately linearly with frame count, longer durations show accelerating slowdown.
+This occurs when VRAM pressure forces the system to offload data to RAM, adding substantial overhead from relatively slow PCIe bus transfers. 
+In contrast, the interpolated approach completes approximately 10x faster for longer videos.
+This speedup comes from generating only half the frames through diffusion and synthesizing the remainder via FILM's neural network.
+
+The advantage becomes even more visible at 24 FPS. 
+Baseline generation takes 120-2750 seconds, while the interpolated approach requires only 80-280 seconds - roughly 10x faster.
+
+\subsection{Performance Impact of Upscaling}
+
+Figure ~\ref{fig:upscaling} compares two approaches for producing 1024x1024 videos:
+direct generation at target resolution versus generating frames at 512x512 and upscaling them with Real-ESRGAN neural network.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/upscale_2x.png}
+    \caption{Generation time comparison for 1024x1024 output. The upscaling approach achieves 15-30x speedup for longer videos.}
+    \label{fig:upscaling}
+\end{figure}
+\FloatBarrier
+
+As we can see the performance difference is very noticeable. Direct 1024x1024 generation requires 180-3300 seconds for the 2-5 second duration range, with severe non-linear scaling due to VRAM pressure and CPU offload.
+Notably, 6-second videos could not be generated at all - every attempt resulted in CUDA out-of-memory errors despite CPU offload mechanisms.
+This hard limit demonstrates that direct high-resolution generation is not merely slow but fundamentally infeasible beyond certain durations on 12GB VRAM hardware.
+
+In contrast, the upscaling approach completes in reasonable time across all tested durations - approximately 15-30x faster where direct generation succeeds.
+The upscaling overhead is minimal compared to baseline generation costs and scales linearly with frame count, avoiding the memory bottlenecks.
+
+\subsection{Summary}
+
+The results validate all three architectural decisions discussed in this chapter: generating at base 8 FPS with interpolation, producing frames at 512x512 with upscaling, and separating concerns into independent pipeline stages.
+Each optimization compounds, transforming what would be either impossible or a 30-60 minute process into 1-3 minute workflow suitable for interactive video generation.

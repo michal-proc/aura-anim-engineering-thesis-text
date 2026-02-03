@@ -1,0 +1,550 @@
+\section{Introduction}
+\label{sec:results_introduction}
+
+In this chapter, we present the results of our work on the text-to-video generation application. Over the course of approximately ten months,
+we designed, implemented, and integrated a complete system that transforms natural language descriptions into videos.
+Our goal, as established in Chapter~\ref{sec:introduction}, was to create an accessible platform that approximates the capabilities of commercial solutions
+like Sora and Veo, while operating within the constraints of consumer-grade hardware and open weights models.
+
+We structured the system around three main components: a video generation pipeline built on AnimateDiff, FILM interpolation,
+and RealESRGAN upscaling - a scalable backend infrastructure powered by Ray Serve - and an intuitive web application frontend.
+Each component was designed to address specific challenges inherent to AI-powered video generation---from managing computationally intensive GPU workloads to providing
+real-time feedback during long-running generation processes.
+
+This chapter serves two purposes. First, we provide a comprehensive walkthrough of the implemented system, demonstrating its features through
+screenshots and usage scenarios. We explain what users see and experience when interacting with the application, from account creation through
+video generation and library management, to content sharing on social media platforms. Second, we reflect on the project as a whole---evaluating our success against the original objectives,
+acknowledging limitations we encountered, and identifying directions for future development.
+
+We begin with an overview of the implemented system components in Section~\ref{sec:implemented_system_overview}, followed by a detailed application walkthrough in Section~\ref{sec:application_walkthrough}.
+Section~\ref{sec:usage_scenarios_demonstration} demonstrates key usage scenarios, while Section~\ref{sec:performance_results_summary} summarizes practical performance characteristics.
+We then discuss limitations in Section~\ref{sec:limitations_known_issues} and potential future work in Section~\ref{sec:future_work}. Finally, Section~\ref{sec:conclusions_reflections} offers our concluding reflections on the project's success and the lessons we learned throughout its development.
+
+
+\section{Overview of the Implemented System}
+\label{sec:implemented_system_overview}
+
+\subsection{Video Generation Pipeline}
+\label{subsec:video_generation_pipeline_results}
+
+The modular, multi-stage video generation pipeline transforms text prompts into video sequences.
+Rather than attempting to generate high-resolution, high-frame-rate videos directly - an approach that quickly exhausts available GPU memory - we adopted a strategy of generating base frames at reasonable resolution and fixed frame rate and enhancing them through multiple post-processing stages.
+
+Our pipeline consists of five interconnected components deployed as independent Ray Serve actors.
+First, the Preprocessor analyzes the user's requested dimensions, frame rate and duration to calculate optimal scaling factors and determine which enhancement stages will be needed.
+Then Video Generator creates base frames at maximum resolution of 512x512 pixels and constant 8 FPS using AnimateDiff, which extends Stable Diffusion models with motion adapters to maintain temporal coherence.
+Users can choose from multiple base models, which gives them flexibility in visual style, along with LoRA modules that introduce specific type of camera movement.
+
+When higher frame rate is requested, the Interpolator synthesizes intermediate frames between base sequence using FILM neural network.
+This approach proves dramatically more efficient than generating every frame through diffusion: interpolation usually adds 15-30 seconds to generation time, while generating all frames through AnimateDiff would require substantially longer.
+Similarly, when resolution exceeds 512 pixels in either dimension, the Upscaler applies frame upscaling using RealESRGAN instead of attempting direct high-resolution generation, which would consume even 10-20x more processing time and frequently fail due to memory exhaustion.
+
+Finally, the Postprocessor handles the final transformations.
+It first trims the frame sequence to match the requested duration, removing any extra frames that were generated as interpolation buffers.
+If frame dimensions do not match the target resolution after upscaling, the Postprocessor applies center cropping.
+Lastly, it encodes frames to user's chosen format, making them ready to be saved in MinIO storage.
+
+\subsection{Backend Infrastructure}
+\label{subsec:backend_infrastructure_results}
+
+The backend infrastructure provides the foundation that connects user interactions with the video generation pipeline.
+We built a system that handles authentication, job management, and data persistence while maintaining responsiveness despite the
+computationally intensive nature of video generation.
+
+\subsubsection{API Server}
+
+At the core of our backend sits a FastAPI server that exposes RESTful endpoints for all client operations. The server handles user
+registration and authentication through JWT tokens, ensuring secure access to protected resources. When a user submits a video generation
+request, the API server validates the input parameters, creates a job record in the database, and forwards the request to the generation pipeline.
+Throughout the generation process, the server tracks job status and provides this information to clients through WebSocket connections.
+
+We implemented ownership-based access control to ensure users can only view and manage their own videos and generation jobs. Each API request includes
+the user's identity extracted from the JWT token, which is validated against resource ownership before granting access. This approach provides data isolation
+between users without requiring complex role-based permission systems.
+
+\subsubsection{Distributed Processing with Ray Serve}
+
+For managing the computationally intensive video generation workload, we adopted Ray Serve as our distributed serving framework. Ray Serve allows us to deploy
+the generation pipeline as a collection of independent replicas, each capable of processing video generation requests. The framework automatically distributes
+incoming requests across available replicas, preventing resource contention whenever possible when multiple users submit jobs simultaneously.
+
+The integration between the FastAPI server and Ray Serve follows a clean separation of concerns. The API server handles all user-facing operations---authentication,
+request validation, and job tracking---while Ray Serve manages the actual video generation computation. This separation allows us to scale these components independently:
+we can add more API server instances to handle increased user traffic, or deploy additional Ray Serve replicas on GPU nodes to increase generation throughput.
+
+\subsubsection{Database and Storage Systems}
+
+We use PostgreSQL as our relational database for storing structured data. The schema organizes information across four main tables: user accounts, generation jobs, job parameters, and job results.
+This structure allows us to efficiently query job history, retrieve generation parameters for reproducibility, and track the status of ongoing generation tasks. SQLAlchemy provides the ORM layer,
+offering a Pythonic interface to database operations while managing connection pooling to prevent exhaustion under heavy load.
+
+For storing generated video files, we deployed MinIO as an S3-compatible object storage service. This dual-storage architecture separates concerns appropriately:
+PostgreSQL handles metadata queries efficiently, while MinIO manages the high-throughput demands of video file storage and retrieval. When a
+generation job completes, the pipeline writes the output file to MinIO and stores only the object reference in PostgreSQL. Users can then download their videos
+through URLs, which offload file serving from the API server directly to MinIO.
+
+\subsection{Web Application Frontend}
+\label{subsec:web_application_frontend_results}
+
+To access the video generation capabilities of the system, users interact with the "AuraAnim" web application.
+The frontend was developed using the Next.js framework and designed with full bilingual support in Polish and English.
+Thanks to the integration of the \texttt{i18n} internationalization mechanism, additional languages can be easily introduced in the future without modifying the application's core structure.
+The homepage, as well as the remainder of the interface, is available to users after registering or logging into the application.
+
+The visual design of the web interface is based on a neon, cyberpunk-inspired color palette combined with the Genos font, creating a modern and futuristic aesthetic that aligns with the theme of video generation.
+
+The interface also incorporates numerous animations and transitions, including an animated background, smoothly expanding sections, and hover-triggered zoom effects.
+These elements enhance interactivity and provide a dynamic, visually engaging user experience.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/main_en}
+    \caption{Homepage of the application in English.}
+    \label{fig:frontend_main_en}
+\end{figure}
+\FloatBarrier
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/main_pl}
+    \caption{Homepage of the application in Polish.}
+    \label{fig:frontend_main_pl}
+\end{figure}
+\FloatBarrier
+
+\FloatBarrier
+\begin{table}[!htbp]
+    \centering
+    \caption{Color palette of the AuraAnim application}
+    \begin{tabularx}{\columnwidth}{@{}YYY@{}}
+        \toprule
+        \textbf{Color Sample} & \textbf{Name} & \textbf{Hex Code} \\ \midrule
+        \includegraphics[height=0.4cm]{figures/frontend/sky} & Sky & \#31B7EA \\
+        \includegraphics[height=0.4cm]{figures/frontend/ocean} & Ocean & \#358EE3 \\
+        \includegraphics[height=0.4cm]{figures/frontend/royal} & Royal & \#375DDA \\
+        \includegraphics[height=0.4cm]{figures/frontend/indigo} & Indigo & \#342EBC \\
+        \includegraphics[height=0.4cm]{figures/frontend/violet} & Violet & \#442090 \\
+        \includegraphics[height=0.4cm]{figures/frontend/magenta} & Magenta & \#B949A3 \\
+        \bottomrule
+    \end{tabularx}
+    \label{tab:color_palette}
+\end{table}
+\FloatBarrier
+
+
+\section{Application Walkthrough}
+\label{sec:application_walkthrough}
+
+In addition to the homepage, the application includes a complete panel for generating and managing created videos, as well as a set of authentication views with a separate layout, visible to users who have not yet registered in the system.
+
+The authentication views include:
+
+\begin{itemize}
+    \item \textbf{/login} --- the login view, requiring an email and password,
+    \item \textbf{/register} --- the registration view, requiring an email address, username, full name, and password with confirmation,
+    \item \textbf{/forgot-password} --- the view displayed after selecting the "Forgot password" option,
+    \item \textbf{/reset-password} --- the view for resetting a user's password,
+    \item \textbf{/verify-email} --- the view displayed after registration or reactivation, informing the user that email verification is required,
+    \item \textbf{/reactivate} --- the view for reactivating a previously deactivated account.
+\end{itemize}
+
+The user panel provides several views that allow users to generate new videos, browse their previous generations, and explore example results in the "Explore" section:
+
+\begin{itemize}
+    \item \textbf{/videos} --- a list of all videos generated by the user,
+    \item \textbf{/videos/explore} --- the "Explore" view, where the user can browse example videos generated by the model,
+    \item \textbf{/videos/create} --- instructions and forms for creating a new video,
+    \item \textbf{/videos/:id} --- the video detail view, where the user can watch the video in fullscreen, inspect generation parameters, share the output, and manage the video,
+    \item \textbf{/jobs} --- an overview and management panel for ongoing generation tasks, as well as a history of completed jobs,
+    \item \textbf{/users/:id} --- the user profile settings view, where the user can modify personal information (full name, nickname, email, password) and deactivate or delete the account.
+\end{itemize}
+
+In addition to the views listed above, the panel also provides the dedicated view \textbf{/videos/:id/shared}, where other users can preview videos shared via social media or a direct link.
+
+\subsection{User Registration and Authentication}
+\label{subsec:user_registration_authentication}
+
+The authentication views use a separate layout in which all other system functionalities remain hidden.
+These views cover all interaction paths available to an unauthenticated user, including logging into the system, registering a new account and reactivating an existing account, along with displaying confirmation messages sent to the user's email address.
+Authentication section provide also forms for resetting a password and defining a new one.
+All critical fields, such as email and password, include full validation (the password requirements include a minimum of 8 characters, at least one lowercase letter, one uppercase letter, and one digit).
+
+The screenshots below present example authentication views.
+The remaining views share the same layout structure and differ only in the displayed information and the specific form they contain.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/auth_login}
+    \caption{View of the login form with a password that does not meet the validation requirements.}
+    \label{fig:frontend_auth_login}
+\end{figure}
+\FloatBarrier
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/auth_register}
+    \caption{View of the empty registration form in the system.}
+    \label{fig:frontend_auth_register}
+\end{figure}
+\FloatBarrier
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/auth_verify_email}
+    \caption{View of the verification email notification displayed after account registration or reactivation.}
+    \label{fig:frontend_auth_verify_email}
+\end{figure}
+\FloatBarrier
+
+\subsection{Video Generation Interface}
+\label{subsec:video_generation_interface}
+
+A user who wishes to generate a new video, upon opening the "Create new video" view, is presented with three expandable sections: \textbf{Instructions}, \textbf{Quick Generation} and \textbf{Full Generation}.
+
+\textbf{Instructions} section provides detailed explanations of each parameter, describing their purpose and how to adjust them so that the model interprets the input correctly and produces the best possible result.
+This section also includes the option to select the generation model, along with information on the visual style offered by each available model.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/create_instructions}
+    \caption{Video creation view with the expanded \textbf{Instructions} section.}
+    \label{fig:frontend_create_instructions}
+\end{figure}
+\FloatBarrier
+
+\textbf{Quick Generation} is a simplified generation form in which the user provides only the prompt and the desired video duration.
+All other parameters are either omitted (e.g., negative prompt) or assigned default values, such as the base model and aspect ratio.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/create_quick}
+    \caption{Video creation view with the expanded \textbf{Quick Generation} section.}
+    \label{fig:frontend_create_quick}
+\end{figure}
+\FloatBarrier
+
+\textbf{Full Generation} is designed for users who want full control over the process and intend to utilize the complete set of available parameters.
+This view allows the user to specify the prompt, negative prompt, video duration, aspect ratio, resolution, frames per second, base model, and inference steps.
+Each parameter includes a tooltip containing a brief explanation of its meaning and function.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/create_full}
+    \caption{Video creation view with the expanded \textbf{Full Generation} section.}
+    \label{fig:frontend_create_full}
+\end{figure}
+\FloatBarrier
+
+\subsection{Generation Progress Monitoring}
+\label{subsec:generation_progress_monitoring}
+
+The user has two ways to monitor active and completed jobs. The first is the \textbf{Jobs} section in the user panel, where all initiated and completed jobs are listed with their status and basic information.
+For completed jobs, the application allows the user to navigate to the generated video. For jobs with the pending or processing status, the user may cancel the generation process (although the job entry does not disappear from the table).
+An example of this table is shown in Figure~\ref{fig:frontend_jobs_table}.
+
+The second method is the job preview panel located in the bottom-right corner of the screen, shown in Figure~\ref{fig:frontend_jobs_ws}.
+This panel retrieves all active jobs and displays them along with their status and completion percentage.
+Once a job is finished, it disappears from the list after a short moment.
+This mechanism enables real-time progress tracking through the use of websockets.
+The user may collapse the panel at any time so that it does not interfere with other interactions within the application.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/jobs_table}
+    \caption{View of the table with all jobs.}
+    \label{fig:frontend_jobs_table}
+\end{figure}
+\FloatBarrier
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/frontend/jobs_ws}
+    \caption{View of active jobs updated in real time.}
+    \label{fig:frontend_jobs_ws}
+\end{figure}
+\FloatBarrier
+
+\subsection{Video Gallery and Management}
+\label{subsec:video_gallery_management}
+
+In the \textbf{Videos} tab, the user can browse all of their completed projects.
+List displays every finished generation along with its name (automatically derived from the prompt, although the user may later modify it) and basic information such as duration and resolution.
+For performance optimization, the view loads the media file only when it becomes visible on the screen - before that, a loading spinner is displayed instead of the video preview.
+
+Within this view, the user can select any video to open its detailed profile, where the full preview and all available actions are presented.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/videos_table}
+    \caption{View of all user generations.}
+    \label{fig:frontend_videos_table}
+\end{figure}
+\FloatBarrier
+
+After opening a video profile, the user is presented with a full preview of the generated video, the creation date and key generation details.
+The interface displays parameters such as prompt and resolution, but application does not retain certain internal generation settings, such as negative prompt or number of inference steps.
+
+The user also has access to a wide range of operations that can be performed on a video.
+These include downloading it, deleting it, renaming within the collection and sharing the video on social media or other web platforms.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/videos_profile}
+    \caption{View of the full generation preview.}
+    \label{fig:frontend_videos_profile}
+\end{figure}
+\FloatBarrier
+
+\subsection{Social Media}
+\label{subsec:social_media}
+
+The video profile allows users to share generated videos on social media platforms and other services directly from the application view.
+App supports opening external platforms via deep links, which redirect the user directly to the post creation interface (in the case of Facebook, X, WhatsApp, and LinkedIn).
+For Instagram, direct redirection to the post creation view from external applications is not supported due to platform limitations.
+In this case, the user is appropriately informed about the need to download the video and share it manually within the Instagram application.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.6\textwidth]{figures/frontend/videos_profile_sharing}
+    \caption{Panel displaying all available sharing options.}
+    \label{fig:frontend_videos_profile_sharing}
+\end{figure}
+\FloatBarrier
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.6\textwidth]{figures/frontend/videos_profile_sharing_instagram}
+    \caption{Modal informing the user that direct sharing to Instagram is not supported.}
+    \label{fig:frontend_videos_profile_sharing_instagram}
+\end{figure}
+\FloatBarrier
+
+Additionally, the application integrates the \textbf{Web Share API}, which enables native sharing functionality provided by the user's operating system or browser.
+This mechanism allows users to share a video link or file using available system-level sharing options, such as messaging applications, email clients, or social media apps, without requiring platform-specific integrations.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/shared_video_profile}
+    \caption{View of the shared generation preview.}
+    \label{fig:frontend_shared_video_profile}
+\end{figure}
+\FloatBarrier
+
+\subsection{Explore Section}
+\label{subsec:explore_section}
+
+The \textbf{Explore} section presents a view where users can browse example generations, download them or use the displayed prompts as inspiration.
+List of videos is the same for all users and is updated exclusively by system administrators.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/explore}
+    \caption{View of the \textbf{Explore} section with example application generations.}
+    \label{fig:frontend_explore}
+\end{figure}
+\FloatBarrier
+
+\subsection{User settings}
+\label{subsec:user_settings}
+
+In the \textbf{User Settings} view, the user can modify basic account information, such as email address and personal details, as well as change the account password.
+The user may also deactivate the account (reactivation requires email confirmation before logging in again) or permanently delete the account.
+
+In future development of the application, this view is intended to include privacy-related settings.
+At the current stage, all user accounts and their content are visible only to their respective owners.
+
+\FloatBarrier
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.99\textwidth]{figures/frontend/user_settings}
+    \caption{View of the \textbf{User Settings} page.}
+    \label{fig:frontend_user_settings}
+\end{figure}
+\FloatBarrier
+
+
+\section{Performance Results Summary}
+\label{sec:performance_results_summary}
+
+We conducted performance benchmarks on a machine running Ubuntu 24.04, equipped with an NVIDIA RTX 4070 Super GPU with 12 GB of VRAM, 32 GB of DDR5 RAM, and an AMD Ryzen 9 7900 CPU.
+
+At 512x512 resolution and constant 8 FPS, generation time takes less than 40 seconds for 2-second video, and at most 110 seconds for 6 seconds of video.
+At higher resolutions, the frames are generated at maximum 512x512 resolution and 8 FPS, and then upscaled and interpolated if necessary.
+This multi-stage architecture proves far more efficient than attempting direct generation at target parameters.
+For example, interpolation from 8 FPS to 24 FPS at 512x512 resolution can reduce generation time by factor of 10 for 6 seconds of video.
+Similarly, generating 1024x1024 videos through upscaling from 512x512 is over 25 times faster (for 5 seconds of video) than direct high-resolution generation, which fails with out-of-memory errors for videos longer than 5 seconds.
+
+Those results validate our core architectural decisions.
+By introducing multiple specialized stages to our video generation pipeline, we achieved the system that generates videos in reasonable time constraints on consumer hardware.
+
+
+\section{Limitations and Known Issues}
+\label{sec:limitations_known_issues}
+% Current constraints of the system
+% Quality limitations compared to commercial solutions
+% Hardware requirements as a barrier
+% Areas requiring further improvement
+
+Despite achieving our core objectives, the system faces several limitations that are primarily stemming from hardware constraints.
+
+\subsection{Hardware Limitations}
+
+The most significant limitation affecting our system is GPU availability.
+While newer or larger models can produce higher-quality videos, we had to prioritize models that can operate within VRAM constraints -
+many modern open-source models designed specifically for video generation deliver better results than AnimateDiff, but their hardware requirements exceeded what our hardware could support (i.e. Wan2.2 requires over 22 GB of VRAM to run video generation in 720p).
+
+Another constraint that comes with limited resources is maximum video length - generating videos longer than 6 seconds becomes increasingly impractical due to memory consumption that grows linearly with frame count.
+While the system can technically produce longer videos, generation time extends beyond what most users consider acceptable for interactive use (i.e. generating 10 seconds of video at 512x512 and 8 FPS takes about 20 minutes).
+
+Hardware constraints also forced us to set maximum base generation resolution at 512x512 and base frame rate at constant 8 FPS - parameters chosen not because they represent optimal quality, but because they allow reliable generation without CUDA out-of-memory errors.
+
+Lastly, our hardware configuration prevented us from fully testing the system scalability characteristics.
+Ray Serve's architecture supports deploying pipeline replicas across multiple GPU nodes, but we had access to only a single GPU.
+While we validated that the system can spawn concurrent pipeline instances and distribute requests appropriately, we could not measure how performance scales when adding additional GPU resources. We also could not measure how efficiently the system handles multiple, simultaneous generation requests.
+
+\subsection{Architectural Limitations}
+
+The visual quality and temporal coherence of videos generated by our system falls short of what commercial solutions can achieve.
+While Sora and Veo produce outputs with consistent physics, good handling of complex motions, and high overall visual quality,
+our reliance on AnimateDiff and open-weight Stable Diffusion models means we inherit their limitations: occasional temporal inconsistencies, artifacts in complex scenes and difficulties maintaining coherent object permanence across longer sequences.
+
+The upscaling and interpolation stages, while drastically improving efficiency, introduce their own artifacts.
+RealESRGAN occasionally produces oversharpened textures or unrealistic details. FILM interpolation can struggle with fast motion or transitions.
+
+The fixed 8 FPS base generation creates another constraint: output frame rates must be multiples of 8 - we cannot produce videos at arbitrary frame rates like 30 or 60 FPS.
+
+
+\section{Future Improvements}
+\label{sec:future_work}
+
+While the current system successfully demonstrates text-to-video generation on consumer-grade hardware, several promising directions could enhance its capabilities, performance and usability.
+
+\subsection{Pipeline Improvements}
+The rapid evolution of open-source video generation models presents continuous opportunities for quality improvements.
+If professional-grade GPUs with larger VRAM and computational power become available, the system could leverage significantly more capable models.
+They could enable direct generation at high resolutions like 1080p at arbitrary frame rate, potentially eliminating the need for interpolating and upscaling stages entirely - what would lead to improved output quality and reduced artifacts introduced by post-processing.
+
+Similarly, the interpolation and upscaling stages could benefit from more advanced models.
+Newer frame interpolation or upscaling neural networks might reduce the artifacts we currently observe, improving the overall output quality of the multi-stage pipeline.
+
+\subsection{Feature Extensions}
+
+The system currently focuses exclusively on text-to-video generation, but the underlying architecture could support additional generation models.
+
+Image-to-video generation - where users provide a starting frame and model animates it - would leverage similar technical foundations while opening new creative possibilities.
+Audio generation and synchronization represents another natural extension. Integrating text-to-audio models to generate soundtracks or sound effects synchronized with video content would create a more complete multimedia generation experience.
+
+The current web interface provides essential functionality but could be extended with features that improve the creative workflow.
+A prompt template library offering pre-composed prompts for common scenarios would help users achieve desired aesthetic more quickly.
+Style transfer capabilities, allowing users to reference existing videos or images as style guides could provide more intuitive control than text prompts alone.
+A more sophisticated gallery with tagging, search and organization features would help users manage larger collections of generated videos.
+
+Collaborative features --- shared libraries, commenting, reviewing, remixing each other's generations with modified prompts --- could build community engagement and encourage creative exploration.
+Creation of a dedicated social media-like feed presenting generations created by other users, which could encourage more frequent engagement with the application.
+
+\subsection{Infrastructure Scaling}
+\label{subsec:infrastructure_scaling}
+
+The current single-node deployment is only the initial configuration of what could become much larger distributed system.
+Ray Serve's architecture was chosen specifically to make horizontal scaling easier, and there are several cloud deployment strategies that could increase the system's capacity and reliability significantly.
+
+\subsubsection{Cloud GPU Provisioning}
+
+Services like Lambda Cloud, AWS, Google Cloud Platform, and Azure give on-demand access to high-performance GPU instances that would allow for substantial throughput improvements.
+Lambda Cloud provides cost-effective access to NVIDIA A100 and H100 GPUs, which have 40-80 GB of VRAM compared to our current 12 GB---this would enable direct generation at higher resolutions using models like Wan2.2 \cite{wan_ai_wan22_i2v_2024}.
+AWS EC2 instances with NVIDIA A10G or A100 GPUs could be set up through Auto Scaling Groups, which would automatically spawn additional GPU workers when there is high demand and terminate them during idle periods to save on costs.
+
+For production deployment, we could use Kubernetes together with the NVIDIA GPU Operator to orchestrate containerized pipeline replicas across a heterogeneous cluster.
+Ray has native Kubernetes integration through KubeRay that would allow seamless scaling of the generation pipeline, with the Ray autoscaler creating additional worker pods based on how many jobs are waiting in the queue.
+This kind of approach would let the system handle hundreds of concurrent generation requests by distributing the workload across dozens of GPU nodes.
+
+\subsubsection{Cost Optimization Strategies}
+
+Cloud GPU instances have significant hourly costs, so efficient resource utilization is very important for economic viability.
+Spot instances on AWS or preemptible VMs on GCP offer 60-90\% cost reductions when compared to on-demand pricing, but they require the system to handle potential interruptions in a graceful way.
+The pipeline's checkpoint capabilities could be extended to save intermediate generation state, which would allow interrupted jobs to resume on newly provisioned instances instead of having to restart from the beginning.
+
+A tiered service model could help balance cost and user experience: users on free tier might have to wait in queue for shared GPU resources with longer wait times, while premium users would get access to dedicated GPU pools with guaranteed capacity.
+Also, implementing request batching---where multiple short video generation requests get processed together---could improve GPU utilization and reduce the per-video costs.
+
+
+\section{Conclusions and Reflections}
+\label{sec:conclusions_reflections}
+
+\subsection{Project Success Evaluation}
+\label{subsec:project_success_evaluation}
+
+When starting this thesis, we established a clear goal: to design and develop a web application that enables users to generate videos from textual descriptions through a multi-stage pipeline approach.
+After approximately 10 months of development, we can assess our success against this objective.
+
+We successfully implemented a complete multi-stage video generation pipeline that operates within consumer-grade hardware constraints.
+The system integrates AnimateDiff for base frame generation, FILM for frame interpolation and RealESRGAN for upscaling into pipeline orchestrated through Ray Serve.
+
+The containerized backend infrastructure handles the complexity of long-running GPU workloads effectively.
+The separation between API Server and generation workload was a good architectural decision, enabling independent scaling.
+PostgreSQL and MinIO clearly separate metadata and file storage, simplifying both implementation and debugging.
+
+We delivered a functional web application that makes text-to-video generation accessible without requiring technical expertise.
+The interface provides two versions of the video generation view - simplified for those less experienced with generative AI, and fully customizable for those seeking maximum control.
+Advanced users can experiment with different base models, resolutions, frame rates and apply camera movement effects.
+The interface is bilingual, supporting both Polish and English languages.
+
+\subsection{Challenges Faced During Development}
+\label{subsec:challenges_faced_during_development}
+
+Throughout the development process, we faced several technical challenges that required creative problem-solving.
+
+The most significant challenge was managing GPU memory constraints.
+Early attempts at direct high-resolution and high frame rate generation consistently failed with CUDA out-of-memory errors, forcing us to rethink our approach.
+This led to the multi-stage architecture we adopted, which remediated those issues.
+
+Integrating the FastAPI endpoints with Ray's distributed execution model presented unexpected complications.
+The two frameworks handle asynchronous operations differently, and coordinating between the API server's request handling and Ray's distributed actors required understanding both systems deeply.
+Also, implementing proper error handling and cleanup when generation job failed or were cancelled required multiple iterations to get right.
+
+Real-time progress tracking demanded solving the problem of communication between GPU processes and web clients.
+AnimateDiff doesn't naturally expose fine-grained progress information, so we had to implement callbacks at strategic points.
+
+\subsection{Satisfaction with Outcomes}
+\label{subsec:satisfaction_outcomes}
+
+Reflecting on the completed system, we feel genuine satisfaction with what we accomplished while maintaining realistic perspective about its limitations.
+
+We are proud that the system works reliably within its design parameters. Users can generate videos from text prompts through user-friendly interface, the pipeline handles generation efficiently, and outputs match user expectations given the constraints we mentioned.
+The system doesn't crash under normal usage, handles concurrent requests appropriately, and provides clear feedback when operations fail.
+This reliability, often taken for granted, required substantial effort to achieve and represents meaningful engineering success.
+
+We are particularly satisfied with the performance optimizations that made the system practical.
+The multi-stage approach enabling over 10x speedups compared to direct generation represents genuine insight into how to work within hardware constraints effectively.
+
+However, we maintain realistic expectations about the system's place in the broader landscape.
+Our outputs don't match Sora or Veo quality, our videos are shorter than commercial solutions produce, and our hardware requirements remain non-trivial despite optimizations.
+
+We are also aware of implementation gaps and technical debt.
+Some error handling could be more robust, the codebase could benefit from more comprehensive testing, and documentation could be more through.
+These gaps reflect the realities of development timelines and prioritization, but acknowledging them prevents overestimating what we delivered.
+
+Looking back at the whole project, we think the most valuable part was not the final application itself, but what we learned along the way.
+Before starting, we had only theoretical knowledge about diffusion models from online resources---actually making them work on real hardware turned out to be completely different experience.
+We learned that GPU memory is always the bottleneck, that distributed systems are harder to debug than we expected, and that keeping frontend and backend in sync gets complicated when heavy computation runs in background.
+We also gained practical experience with technologies that are becoming increasingly important in the industry: containerization with Docker, distributed computing with Ray, modern web frameworks.
+These skills will be useful regardless of whether we continue working with generative AI or move to other areas.
+
+In the end, this thesis showed us that building AI-powered applications is not just about choosing the right model.
+It requires understanding the entire stack, from GPU memory management to user interface design, and making many compromises along the way.

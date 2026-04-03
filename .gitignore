@@ -17,9 +17,6 @@
 *.xdv
 *-converted-to.*
 
-# Exclude generated pdfs.
-*.pdf
-
 ## Bibliography auxiliary files (bibtex/biblatex/biber):
 *.bbl
 *.bbl-SAVE-ERROR
